@@ -4,8 +4,9 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "Debug Node API",
-      "program": "${workspaceFolder}/backend/server.js"
+      "name": "Run API",
+      "program": "${workspaceFolder}/backend/server.js",
+      "skipFiles": ["<node_internals>/**"]
     }
   ]
 }

@@ -3,6 +3,7 @@ const cors = require("cors");
 require("dotenv").config();
 
 const app = express();
+const router = express.Router();
 
 app.use(cors());
 app.use(express.json());
@@ -11,10 +12,12 @@ app.get("/",(req,res)=>{
     res.send("InventraDecent API running");
 });
 
-const productRoute = require("./routes/product");
+const auth = require("./routes/auth")
+const authMiddleware = require("./middleware/AuthMiddleware");
+router.post("/api/auth/login",auth.login);
+router.get("/api/auth/userDetail",authMiddleware,auth.userDetail);
 
-app.use("/api/products",productRoute);
-
+app.use(router);
 
 const port = "5000";
 
