@@ -24,3 +24,4 @@ export const C = {
   sidebarBorder: "#2D2B5E",
   sidebarText: "#A5B4FC",
 };
+

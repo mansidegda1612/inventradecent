@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { C } from "../utils/theme";
 import { fmt } from "../utils/format";
-import { Btn, Card, Badge, Modal, Field, PageHeader } from "../components/ui";
+import { Btn, Card, Badge, Modal, Field, PageHeader, TableWrap } from "../components/ui";
 
 export default function ProductMaster({ products, setProducts, categories }) {
   const [modal, setModal] = useState(false);
@@ -38,8 +38,9 @@ export default function ProductMaster({ products, setProducts, categories }) {
         action={<Btn onClick={() => open(null)}>+ Add Product</Btn>}
       />
 
-      <Card>
-        <table>
+      <Card noPad>
+          <TableWrap>
+            <table>
           <thead>
             <tr><th>Product</th><th>Category</th><th>Barcode</th><th>GST%</th><th>Rate</th><th>Qty</th><th>Actions</th></tr>
           </thead>
@@ -65,10 +66,11 @@ export default function ProductMaster({ products, setProducts, categories }) {
             })}
           </tbody>
         </table>
+        </TableWrap>
       </Card>
 
       <Modal open={modal} onClose={() => setModal(false)} title={edit ? "Edit Product" : "Add Product"} width={600}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div className="form-grid-2">
           <Field label="Product Name" required>
             <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
           </Field>
@@ -78,7 +80,7 @@ export default function ProductMaster({ products, setProducts, categories }) {
             </select>
           </Field>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14 }}>
+        <div className="form-grid-21">
           <Field label="Barcode" required>
             <input value={form.barcode} onChange={e => setForm({ ...form, barcode: e.target.value })} />
           </Field>
@@ -88,7 +90,7 @@ export default function ProductMaster({ products, setProducts, categories }) {
             </select>
           </Field>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div className="form-grid-2">
           <Field label="Rate (₹)" required>
             <input type="number" value={form.rate} onChange={e => setForm({ ...form, rate: e.target.value })} />
           </Field>

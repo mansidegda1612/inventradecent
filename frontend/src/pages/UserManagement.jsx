@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { C } from "../utils/theme";
-import { Btn, Card, Badge, Modal, Field, PageHeader } from "../components/ui";
+import { Btn, Card, Badge, Modal, Field, PageHeader, TableWrap } from "../components/ui";
 
 export default function UserManagement({ users, setUsers }) {
   const [modal, setModal] = useState(false);
@@ -30,8 +30,9 @@ export default function UserManagement({ users, setUsers }) {
         action={<Btn onClick={() => open(null)}>+ Add User</Btn>}
       />
 
-      <Card>
-        <table>
+      <Card noPad>
+          <TableWrap>
+            <table>
           <thead>
             <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
           </thead>
@@ -59,6 +60,7 @@ export default function UserManagement({ users, setUsers }) {
             ))}
           </tbody>
         </table>
+        </TableWrap>
       </Card>
 
       <Modal open={modal} onClose={() => setModal(false)} title={edit ? "Edit User" : "Add User"}>

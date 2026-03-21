@@ -46,7 +46,7 @@ export default function Login({ onLogin }) {
             <input
               value={password}
               onChange={e => setPassword(e.target.value)}
-              type="password" 
+              type="password"
               placeholder="••••••••"
               onKeyDown={e => e.key === "Enter" && handle()}
             />

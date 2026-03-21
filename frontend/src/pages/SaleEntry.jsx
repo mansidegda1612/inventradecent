@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { C } from "../utils/theme";
 import { fmt } from "../utils/format";
-import { Btn, Card, Badge, Modal, Field, PageHeader } from "../components/ui";
+import { Btn, Card, Badge, Modal, Field, PageHeader, TableWrap } from "../components/ui";
 
 export default function SaleEntry({ sales, setSales, products, setProducts, accounts }) {
   const customers = accounts.filter(a => a.type === "customer");
@@ -58,8 +58,9 @@ export default function SaleEntry({ sales, setSales, products, setProducts, acco
         }
       />
 
-      <Card>
-        <table>
+      <Card noPad>
+          <TableWrap>
+            <table>
           <thead>
             <tr><th>Invoice</th><th>Customer</th><th>Date</th><th>Items</th><th>Total</th></tr>
           </thead>
@@ -78,10 +79,11 @@ export default function SaleEntry({ sales, setSales, products, setProducts, acco
             })}
           </tbody>
         </table>
+         </TableWrap>
       </Card>
 
       <Modal open={modal} onClose={() => setModal(false)} title="New Sale Entry" width={680}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 4 }}>
+        <div className="form-grid-3">
           <Field label="Customer" required>
             <select value={form.customerId} onChange={e => setForm({ ...form, customerId: e.target.value })}>
               {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}

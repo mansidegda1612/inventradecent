@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { C } from "../utils/theme";
-import { Btn, Card, Badge, Modal, Field, PageHeader } from "../components/ui";
+import { Btn, Card, Badge, Modal, Field, PageHeader, TableWrap } from "../components/ui";
 
 export default function CategoryMaster({ categories, setCategories, products }) {
   const [modal, setModal] = useState(false);
@@ -28,8 +28,9 @@ export default function CategoryMaster({ categories, setCategories, products }) 
         action={<Btn onClick={() => open(null)}>+ Add Category</Btn>}
       />
 
-      <Card>
-        <table>
+      <Card noPad>
+          <TableWrap>
+            <table>
           <thead>
             <tr><th>Category Name</th><th>Description</th><th>Products</th><th>Actions</th></tr>
           </thead>
@@ -49,6 +50,7 @@ export default function CategoryMaster({ categories, setCategories, products }) 
             ))}
           </tbody>
         </table>
+        </TableWrap>
       </Card>
 
       <Modal open={modal} onClose={() => setModal(false)} title={edit ? "Edit Category" : "Add Category"}>

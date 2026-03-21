@@ -18,33 +18,49 @@ const NAV = [
   { id: "users",       label: "User Management",   icon: "⊙", roles: ["admin"] },
 ];
 
-export default function Sidebar({ page, setPage, role, onLogout }) {
+function SidebarContent({ page, setPage, role, onLogout, onClose }) {
+  const handleNav = (id) => {
+    setPage(id);
+    onClose?.();
+  };
+
   return (
     <div style={{
-      width: 230, minHeight: "100vh",
+      width: 230, height: "100%", minHeight: "100vh",
       background: C.sidebarBg,
       borderRight: `1px solid ${C.sidebarBorder}`,
-      display: "flex", flexDirection: "column", flexShrink: 0,
+      display: "flex", flexDirection: "column",
     }}>
       {/* Logo */}
-      <div style={{ padding: "22px 20px 18px", borderBottom: `1px solid ${C.sidebarBorder}` }}>
-        <div style={{ fontSize: 20, fontWeight: 900, color: "#fff", letterSpacing: "-.03em" }}>
-          <span style={{ color: "#818CF8" }}>Inventra</span>Decent
+      <div style={{ padding: "22px 20px 16px", borderBottom: `1px solid ${C.sidebarBorder}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <div style={{ fontSize: 19, fontWeight: 900, color: "#fff", letterSpacing: "-.03em" }}>
+            <span style={{ color: "#818CF8" }}>Inventra</span>Decent
+          </div>
+          <div style={{ fontSize: 10, color: C.sidebarText, marginTop: 2, opacity: 0.7 }}>
+            Accounting & Inventory
+          </div>
         </div>
-        <div style={{ fontSize: 11, color: C.sidebarText, marginTop: 3, opacity: 0.7 }}>
-          Accounting & Inventory
-        </div>
+        {/* Mobile close btn */}
+        {onClose && (
+          <button
+            onClick={onClose}
+            style={{ background: "#2D2B5E", border: "none", color: C.sidebarText, width: 28, height: 28, borderRadius: 8, cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            ×
+          </button>
+        )}
       </div>
 
-      {/* Nav links */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "10px 10px" }}>
+      {/* Nav */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "8px 10px" }}>
         {NAV.filter(n => !n.roles || n.roles.includes(role)).map((n, i) => {
           if (n.section) {
             return (
               <div key={i} style={{
                 fontSize: 10, fontWeight: 700, color: "#6366F1",
                 letterSpacing: ".1em", textTransform: "uppercase",
-                padding: "14px 12px 5px", opacity: 0.85,
+                padding: "13px 12px 4px", opacity: 0.85,
               }}>
                 {n.section}
               </div>
@@ -54,7 +70,7 @@ export default function Sidebar({ page, setPage, role, onLogout }) {
           return (
             <button
               key={n.id}
-              onClick={() => setPage(n.id)}
+              onClick={() => handleNav(n.id)}
               style={{
                 display: "flex", alignItems: "center", gap: 10,
                 width: "100%", padding: "9px 12px", borderRadius: 8,
@@ -92,5 +108,32 @@ export default function Sidebar({ page, setPage, role, onLogout }) {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function Sidebar({ page, setPage, role, onLogout, mobileOpen, setMobileOpen }) {
+  return (
+    <>
+      {/* Desktop sidebar — hidden on mobile via CSS class */}
+      <div className="sidebar-desktop">
+        <SidebarContent page={page} setPage={setPage} role={role} onLogout={onLogout} />
+      </div>
+
+      {/* Mobile drawer */}
+      <div
+        className="sidebar-overlay"
+        style={{ opacity: mobileOpen ? 1 : 0, pointerEvents: mobileOpen ? "auto" : "none", transition: "opacity .25s" }}
+        onClick={() => setMobileOpen(false)}
+      />
+      <div className={`sidebar-drawer${mobileOpen ? " open" : ""}`}>
+        <SidebarContent
+          page={page}
+          setPage={setPage}
+          role={role}
+          onLogout={onLogout}
+          onClose={() => setMobileOpen(false)}
+        />
+      </div>
+    </>
   );
 }

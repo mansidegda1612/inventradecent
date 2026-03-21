@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { C } from "../utils/theme";
 import { fmt } from "../utils/format";
-import { Btn, Card, Badge, Modal, Field, PageHeader } from "../components/ui";
+import { Btn, Card, Badge, Modal, Field, PageHeader, TableWrap } from "../components/ui";
 
 export default function PurchaseEntry({ purchases, setPurchases, products, setProducts, accounts }) {
   const suppliers = accounts.filter(a => a.type === "supplier");
@@ -54,8 +54,9 @@ export default function PurchaseEntry({ purchases, setPurchases, products, setPr
         action={<Btn onClick={() => setModal(true)}>+ New Purchase</Btn>}
       />
 
-      <Card>
-        <table>
+      <Card noPad>
+          <TableWrap>
+            <table>
           <thead>
             <tr><th>Bill No</th><th>Supplier</th><th>Date</th><th>Items</th><th>Total</th></tr>
           </thead>
@@ -74,10 +75,11 @@ export default function PurchaseEntry({ purchases, setPurchases, products, setPr
             })}
           </tbody>
         </table>
+        </TableWrap>
       </Card>
 
       <Modal open={modal} onClose={() => setModal(false)} title="New Purchase Entry" width={680}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+        <div className="form-grid-3">
           <Field label="Supplier" required>
             <select value={form.supplierId} onChange={e => setForm({ ...form, supplierId: e.target.value })}>
               {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -94,7 +96,7 @@ export default function PurchaseEntry({ purchases, setPurchases, products, setPr
         {/* Add item row */}
         <div style={{ background: C.bg, borderRadius: 10, padding: 16, marginBottom: 16, border: `1px solid ${C.border}` }}>
           <p style={{ fontSize: 12, fontWeight: 700, color: C.muted, marginBottom: 12, textTransform: "uppercase", letterSpacing: ".06em" }}>Add Items</p>
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
+          <div className="form-grid-211">
             <Field label="Product">
               <select value={itemForm.productId} onChange={e => {
                 const p = products.find(x => x.id === Number(e.target.value));

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { C } from "../utils/theme";
 import { fmt } from "../utils/format";
-import { Btn, Card, Badge, Modal, Field, PageHeader } from "../components/ui";
+import { Btn, Card, Badge, Modal, Field, PageHeader, TableWrap } from "../components/ui";
 
 export default function AccountMaster({ accounts, setAccounts }) {
   const [modal, setModal] = useState(false);
@@ -40,8 +40,9 @@ export default function AccountMaster({ accounts, setAccounts }) {
         ))}
       </div>
 
-      <Card>
-        <table>
+      <Card noPad>
+          <TableWrap>
+            <table>
           <thead>
             <tr><th>Name</th><th>Type</th><th>City</th><th>GST No.</th><th>Opening Balance</th><th>Actions</th></tr>
           </thead>
@@ -63,13 +64,14 @@ export default function AccountMaster({ accounts, setAccounts }) {
             ))}
           </tbody>
         </table>
+        </TableWrap>
       </Card>
 
       <Modal open={modal} onClose={() => setModal(false)} title={edit ? "Edit Account" : "Add Account"}>
         <Field label="Name" required>
           <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
         </Field>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div className="form-grid-2">
           <Field label="Type">
             <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
               <option value="customer">Customer</option>
