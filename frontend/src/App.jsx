@@ -50,7 +50,7 @@ function HamburgerIcon() {
 }
 
 export default function App() {
-  const [role, setRole]           = useState(null);
+  const [role, setRole]           = useState(sessionStorage.getItem("userRole") ? parseInt(sessionStorage.getItem("userRole")): null);
   const [page, setPage]           = useState("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -62,12 +62,13 @@ export default function App() {
   const [purchases,  setPurchases]  = useState(INIT_PURCHASES);
   const [sales,      setSales]      = useState(INIT_SALES);
 
-  if (!role) return <Login onLogin={setRole} />;
+  const islogin = sessionStorage.getItem("token") != undefined;
+  if (!islogin) return <Login onLogin={setRole} />;
 
   const pages = {
     dashboard:     <Dashboard        products={products} sales={sales} purchases={purchases} accounts={accounts} />,
     users:         <UserManagement   users={users} setUsers={setUsers} />,
-    accounts:      <AccountMaster    accounts={accounts} setAccounts={setAccounts} />,
+    accounts:      <AccountMaster />,
     categories:    <CategoryMaster   categories={categories} setCategories={setCategories} products={products} />,
     products:      <ProductMaster    products={products} setProducts={setProducts} categories={categories} />,
     barcode:       <BarcodeGenerator products={products} />,
@@ -78,7 +79,7 @@ export default function App() {
     "fin-reports": <FinancialReports sales={sales} purchases={purchases} products={products} />,
   };
 
-  const handleLogout = () => { setRole(null); setPage("dashboard"); setMobileOpen(false); };
+  const handleLogout = () => { sessionStorage.clear() ; setRole(null); setPage("dashboard"); setMobileOpen(false); };
 
   return (
     <>

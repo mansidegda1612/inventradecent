@@ -1,21 +1,21 @@
 import { C } from "../../utils/theme";
 
 const NAV = [
-  { id: "dashboard",   label: "Dashboard",         icon: "⊞", roles: ["admin", "user"] },
-  { section: "Masters",                                        roles: ["admin", "user"] },
-  { id: "accounts",    label: "Account Master",    icon: "◉", roles: ["admin", "user"] },
-  { id: "categories",  label: "Category Master",   icon: "▤", roles: ["admin", "user"] },
-  { id: "products",    label: "Product Master",    icon: "⬡", roles: ["admin", "user"] },
-  { id: "barcode",     label: "Barcode Generator", icon: "▦", roles: ["admin", "user"] },
-  { section: "Transactions",                                   roles: ["admin", "user"] },
-  { id: "purchase",    label: "Purchase Entry",    icon: "↓", roles: ["admin", "user"] },
-  { id: "sale",        label: "Sale Entry",        icon: "↑", roles: ["admin", "user"] },
-  { section: "Reports",                                        roles: ["admin", "user"] },
-  { id: "inv-reports", label: "Inventory Reports", icon: "◑", roles: ["admin", "user"] },
-  { id: "acc-reports", label: "Account Reports",   icon: "≡", roles: ["admin", "user"] },
-  { id: "fin-reports", label: "Financial Reports", icon: "◈", roles: ["admin", "user"] },
-  { section: "Admin",                                          roles: ["admin"] },
-  { id: "users",       label: "User Management",   icon: "⊙", roles: ["admin"] },
+  { id: "dashboard",   label: "Dashboard",         icon: "⊞", roles: [1, 2] },
+  { section: "Masters",                                        roles: [1, 2] },
+  { id: "accounts",    label: "Account Master",    icon: "◉", roles: [1, 2]  },
+  { id: "categories",  label: "Category Master",   icon: "▤", roles: [1, 2]  },
+  { id: "products",    label: "Product Master",    icon: "⬡", roles: [1, 2]  },
+  { id: "barcode",     label: "Barcode Generator", icon: "▦", roles: [1, 2]  },
+  { section: "Transactions",                                   roles: [1, 2]  },
+  { id: "purchase",    label: "Purchase Entry",    icon: "↓", roles: [1, 2]  },
+  { id: "sale",        label: "Sale Entry",        icon: "↑", roles: [1, 2]  },
+  { section: "Reports",                                        roles: [1, 2]  },
+  { id: "inv-reports", label: "Inventory Reports", icon: "◑", roles: [1, 2]  },
+  { id: "acc-reports", label: "Account Reports",   icon: "≡", roles: [1, 2]  },
+  { id: "fin-reports", label: "Financial Reports", icon: "◈", roles: [1, 2]  },
+  { section: "Admin",                                          roles: [1] },
+  { id: "users",       label: "User Management",   icon: "⊙", roles:  [1] },
 ];
 
 function SidebarContent({ page, setPage, role, onLogout, onClose }) {

@@ -1,16 +1,26 @@
 import { useState } from "react";
 import { C } from "../utils/theme";
 import { Btn, Field } from "../components/ui";
+import { callAPI } from "../utils/callserver";
 
 export default function Login({ onLogin }) {
-  const [email, setEmail]       = useState("admin@inventra.com");
-  const [password, setPassword] = useState("admin123");
-  const [err, setErr]           = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [err, setErr] = useState("");
 
-  const handle = () => {
-    if (email === "admin@inventra.com" && password === "admin123") onLogin("admin");
-    else if (email === "sales@inventra.com" && password === "user123") onLogin("user");
-    else setErr("Invalid credentials.");
+  const handle = async () => {
+    let res = await callAPI("auth/login", "POST", {
+      "user_id": email,
+      "password": password
+    });
+    if (res.success && res.data) {
+      sessionStorage.setItem("token", res.data.accessToken);
+      sessionStorage.setItem("userRole", res.data.user.userrole);
+
+      onLogin(res.data.user.userrole);
+    }
+    else
+      setErr(res.message);
   };
 
   return (
@@ -38,16 +48,16 @@ export default function Login({ onLogin }) {
             <input
               value={email}
               onChange={e => setEmail(e.target.value)}
-              type="email"
-              placeholder="email@example.com"
+              type="text"
+              autoFocus
             />
           </Field>
           <Field label="Password" required>
             <input
               value={password}
+
               onChange={e => setPassword(e.target.value)}
               type="password"
-              placeholder="••••••••"
               onKeyDown={e => e.key === "Enter" && handle()}
             />
           </Field>
@@ -57,11 +67,6 @@ export default function Login({ onLogin }) {
           <Btn onClick={handle} style={{ width: "100%", justifyContent: "center" }}>
             Sign In →
           </Btn>
-
-          <p style={{ fontSize: 11, color: C.hint, marginTop: 16, textAlign: "center", lineHeight: 1.8 }}>
-            Admin: admin@inventra.com / admin123<br />
-            User: sales@inventra.com / user123
-          </p>
         </div>
       </div>
     </div>
