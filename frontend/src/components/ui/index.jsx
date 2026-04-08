@@ -980,11 +980,7 @@ export function DataGrid({
                 >
                   {btn.icon && <span>{btn.icon}</span>}
                   {btn.label}
-                  {btn.hotkey && (
-                    <span style={S.hotkeyBadge}>
-                      {btn.hotkey.toUpperCase()}
-                    </span>
-                  )}
+                 
                 </button>
               ))}
             </div>
@@ -1171,11 +1167,7 @@ export function DataGrid({
                 >
                   {btn.icon && <span>{btn.icon}</span>}
                   {btn.label}
-                  {btn.hotkey && (
-                    <span style={S.hotkeyBadge}>
-                      {btn.hotkey.toUpperCase()}
-                    </span>
-                  )}
+                 
                 </button>
               ))}
             </div>

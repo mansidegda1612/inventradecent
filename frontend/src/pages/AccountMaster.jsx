@@ -9,6 +9,7 @@ export default function AccountMaster() {
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ name: "", type: "customer", city: "", contact_no: "", gst: "", opening: 0 });
   const [edit, setEdit] = useState(null);
+  const [focusedData ,setfocusedData] = useState({});
   const [total, setTotal] = useState(0);
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -113,17 +114,19 @@ export default function AccountMaster() {
   };
 
   // Delete account
-  const deleteAccount = async (confirm, id) => {
-    console.log(id);
+  const deleteAccount = async (confirm, data) => {
+    setfocusedData(data);
+    console.log(data);
     if (!confirm)
       setConfirmOpen(true)//"Are you sure you want to delete this account?");
     else {
       try {
         setLoading(true);
-        const res = await callAPI(`customers/${id}`, "DELETE");
+        const res = await callAPI(`customers/${focusedData.id}`, "DELETE");
         console.log("Delete response:", res);
 
         if (res.success) {
+          show(res.message);
           await fetchAccounts(); // Refresh the grid
         } else {
           show("Failed to delete account", "error");
@@ -242,17 +245,17 @@ export default function AccountMaster() {
           HeaderButtons = {[
              {
               key: "Add", label: "Add Account", icon: "+",variant:"primary",hotkey: "ctrl+a",
-              onClick: (ids, all) => open(null)
+              onClick: (ids, all,focused) => open(null)
             },
           ]}
           footerButtons={[
             {
               key: "edit", label: "Edit", icon: "⬇",hotkey: "ctrl+e",
-              onClick: (ids, all) => open(ids)
+              onClick: (ids, all,focused) => open(focused)
             },
             {
               key: "del", label: "Delete", icon: "🗑", variant: "danger", hotkey: "ctrl+d", 
-              onClick: ids => deleteAccount(false , ids)
+              onClick: (ids, all,focused) => deleteAccount(false , focused)
             },
           ]} />
       </Card>
