@@ -9,7 +9,7 @@ import Login            from "./pages/Login";
 import Dashboard        from "./pages/Dashboard";
 import UserManagement   from "./pages/UserManagement";
 import AccountMaster    from "./pages/AccountMaster";
-import CategoryMaster   from "./pages/CategoryMaster";
+// import CategoryMaster   from "./pages/CategoryMaster";
 import ProductMaster    from "./pages/ProductMaster";
 import BarcodeGenerator from "./pages/BarcodeGenerator";
 import PurchaseEntry    from "./pages/PurchaseEntry";
@@ -28,7 +28,7 @@ const PAGE_LABELS = {
   dashboard:    "Dashboard",
   users:        "User Management",
   accounts:     "Account Master",
-  categories:   "Category Master",
+  // categories:   "Category Master",
   products:     "Product Master",
   barcode:      "Barcode Generator",
   purchase:     "Purchase Entry",
@@ -69,8 +69,8 @@ export default function App() {
     dashboard:     <Dashboard        products={products} sales={sales} purchases={purchases} accounts={accounts} />,
     users:         <UserManagement   users={users} setUsers={setUsers} />,
     accounts:      <AccountMaster />,
-    categories:    <CategoryMaster   categories={categories} setCategories={setCategories} products={products} />,
-    products:      <ProductMaster    products={products} setProducts={setProducts} categories={categories} />,
+    // categories:    <CategoryMaster   categories={categories} setCategories={setCategories} products={products} />,
+    products:      <ProductMaster />,
     barcode:       <BarcodeGenerator products={products} />,
     purchase:      <PurchaseEntry    purchases={purchases} setPurchases={setPurchases} products={products} setProducts={setProducts} accounts={accounts} />,
     sale:          <SaleEntry        sales={sales} setSales={setSales} products={products} setProducts={setProducts} accounts={accounts} />,

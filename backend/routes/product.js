@@ -19,7 +19,7 @@ router.get("/products/", async (req, res) => {
 
     const [countRows] = await pool.query(`SELECT COUNT(*) AS total FROM product p ${where}`, params);
     const [rows] = await pool.query(
-      `SELECT p.*, c.name AS category_name FROM product p LEFT JOIN category c ON p.category=c.name ${where} ORDER BY p.name ASC LIMIT ? OFFSET ?`,
+      `SELECT p.*, c.name AS category_name FROM product p LEFT JOIN category c ON p.category=c.id ${where} ORDER BY p.name ASC LIMIT ? OFFSET ?`,
       [...params, parseInt(limit), offset]
     );
 
@@ -74,7 +74,7 @@ router.get("/products/:id", async (req, res) => {
  // #swagger.tags = ['Products']
   try {
     const [rows] = await pool.query(
-      "SELECT p.*, c.name AS category_name FROM product p LEFT JOIN category c ON p.category=c.name WHERE p.id=?",
+      "SELECT p.*, c.name AS category_name FROM product p LEFT JOIN category c ON p.category=c.id WHERE p.id=?",
       [req.params.id]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: "Product not found" });

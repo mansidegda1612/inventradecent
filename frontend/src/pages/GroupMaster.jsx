@@ -4,14 +4,14 @@ import { Btn, Modal, Field, ToastProvider, ConfirmModal } from "../components/ui
 import { callAPI } from "../utils/callserver";
 
 // ✅ Wrap with forwardRef so parent can call openAdd / openEdit / openDelete
-const CategoryMaster = forwardRef(function CategoryMaster({ onSaved }, ref) {
+const GroupMaster = forwardRef(function GroupMaster({ onSaved }, ref) {
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ name: "" });
   const [edit, setEdit] = useState(null);
   const [loading, setLoading] = useState(false);
   const [toasts, setToasts] = useState({ open: false, msg: null, type: null });
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmMsg] = useState("Are You Sure You want to Delete this Category?");
+  const [confirmMsg] = useState("Are You Sure You want to Delete this Group?");
   const focusedDataRef = useRef(null); // ✅ use ref instead of state for delete target
 
   const show = (msg, type = "success") => {
@@ -28,7 +28,7 @@ const CategoryMaster = forwardRef(function CategoryMaster({ onSaved }, ref) {
 
   // ── OPEN EDIT ─────────────────────────────────────────────────────────────
   const openEdit = (row) => {
-    if (!row) { show("Select a Category to edit", "error"); return; }
+    if (!row) { show("Select a group to edit", "error"); return; }
     setForm({ name: row.name || "" });
     setEdit(row.id);
     setModal(true);
@@ -36,7 +36,7 @@ const CategoryMaster = forwardRef(function CategoryMaster({ onSaved }, ref) {
 
   // ── OPEN DELETE ───────────────────────────────────────────────────────────
   const openDelete = (row) => {
-    if (!row) { show("Select a Category to delete", "error"); return; }
+    if (!row) { show("Select a group to delete", "error"); return; }
     focusedDataRef.current = row;
     setConfirmOpen(true);
   };
@@ -56,8 +56,8 @@ const CategoryMaster = forwardRef(function CategoryMaster({ onSaved }, ref) {
     try {
       setLoading(true);
       const res = edit
-        ? await callAPI(`Categories/${edit}`, "PUT", model)
-        : await callAPI("Categories", "POST", model);
+        ? await callAPI(`groups/${edit}`, "PUT", model)
+        : await callAPI("groups", "POST", model);
 
         show(res.message, res.success ? "success" : "error" );
       if (res.success) {
@@ -65,7 +65,7 @@ const CategoryMaster = forwardRef(function CategoryMaster({ onSaved }, ref) {
         onSaved?.(); // ✅ notify parent to refresh dropdown
       } 
     } catch {
-      show(`Error ${edit ? "updating" : "creating"} Category`, "error");
+      show(`Error ${edit ? "updating" : "creating"} Group`, "error");
     } finally {
       setLoading(false);
     }
@@ -75,13 +75,13 @@ const CategoryMaster = forwardRef(function CategoryMaster({ onSaved }, ref) {
   const confirmDelete = async () => {
     try {
       setLoading(true);
-      const res = await callAPI(`Categories/${focusedDataRef.current.id}`, "DELETE");
+      const res = await callAPI(`groups/${focusedDataRef.current.id}`, "DELETE");
       show(res.message, res.success ? "success" : "error" );
       if (res.success) {
         onSaved?.(); // ✅ notify parent to refresh dropdown
       } 
     } catch {
-      show("Error deleting Category", "error");
+      show("Error deleting Group", "error");
     } finally {
       setLoading(false);
       setConfirmOpen(false);
@@ -90,8 +90,8 @@ const CategoryMaster = forwardRef(function CategoryMaster({ onSaved }, ref) {
 
   return (
     <>
-      <Modal open={modal} onClose={() => setModal(false)} title={edit ? "Edit Category" : "Add Category"}>
-        <Field label="Category Name" required>
+      <Modal open={modal} onClose={() => setModal(false)} title={edit ? "Edit Group" : "Add Group"}>
+        <Field label="Group Name" required>
           <input
             autoFocus
             value={form.name}
@@ -118,4 +118,4 @@ const CategoryMaster = forwardRef(function CategoryMaster({ onSaved }, ref) {
   );
 });
 
-export default CategoryMaster;
+export default GroupMaster;

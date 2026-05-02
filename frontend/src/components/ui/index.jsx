@@ -1,9 +1,9 @@
 
-import { useEffect, useMemo, useRef, useState,useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { C } from "../../utils/theme";
 
 // ─── BUTTON ──────────────────────────────────────────────────────────────────
-export function Btn({ children, onClick, variant = "primary", small, danger, style: s, disabled }) {
+export function Btn({ children, onClick, variant = "primary", small, danger, style: s, disabled, autoFocus }) {
   const base = {
     display: "inline-flex", alignItems: "center", gap: 6,
     padding: small ? "5px 13px" : "8px 18px",
@@ -20,6 +20,7 @@ export function Btn({ children, onClick, variant = "primary", small, danger, sty
   const v = danger ? "danger" : variant;
   return (
     <button
+      autoFocus={autoFocus}
       style={{ ...base, ...styles[v], ...s }}
       onClick={onClick}
       onMouseEnter={e => { e.currentTarget.style.filter = "brightness(.93)"; e.currentTarget.style.transform = "translateY(-1px)"; }}
@@ -181,22 +182,22 @@ export function ToastProvider({ open, msg, type }) {
   return (
     <div style={{
       position: "fixed",
-        bottom: 20,
-        left: "50%",
-        transform: `translateX(-50%) ${open ? "translateY(0)" : "translateY(20px)"}`,
-        opacity: open ? 1 : 0,
-        transition: "all 0.9s ease",
-        zIndex: 2000,
-        padding: "10px 16px",
-        borderRadius: 10,
-        fontSize: 13,
-        fontWeight: 600,
-        color: type === "error" ? C.redBg : C.greenBg,
-        background: type === "error" ? C.red : C.green,
-       //border: `1px solid ${type === "error" ? C.red : C.green}`,
-        boxShadow: "0 4px 12px #00000020",
-        minWidth: 200,
-        textAlign: "center"
+      bottom: 20,
+      left: "50%",
+      transform: `translateX(-50%) ${open ? "translateY(0)" : "translateY(20px)"}`,
+      opacity: open ? 1 : 0,
+      transition: "all 0.9s ease",
+      zIndex: 2000,
+      padding: "10px 16px",
+      borderRadius: 10,
+      fontSize: 13,
+      fontWeight: 600,
+      color: type === "error" ? C.redBg : C.greenBg,
+      background: type === "error" ? C.red : C.green,
+      //border: `1px solid ${type === "error" ? C.red : C.green}`,
+      boxShadow: "0 4px 12px #00000020",
+      minWidth: 200,
+      textAlign: "center"
     }}>
       {msg}
     </div>
@@ -204,9 +205,9 @@ export function ToastProvider({ open, msg, type }) {
 }
 
 //  ─── confirmation Box message ──────────────────────────────
-export function ConfirmModal({open,onClose,onConfirm,title = "Confirmtion",message = "Are you sure?"}) {
+export function ConfirmModal({ open, onClose, onConfirm, title = "Confirmtion", message = "Are you sure?" }) {
   return (
-    <Modal open={open} onClose={onClose} width={400} title = {title}>
+    <Modal open={open} onClose={onClose} width={400} title={title}>
       <div>
         <p style={{ fontSize: 13, marginBottom: 20 }}>{message}</p>
 
@@ -214,7 +215,7 @@ export function ConfirmModal({open,onClose,onConfirm,title = "Confirmtion",messa
           <Btn variant="ghost" onClick={onClose}>
             Cancel
           </Btn>
-          <Btn danger onClick={onConfirm}>
+          <Btn danger onClick={onConfirm} autoFocus>
             Confirm
           </Btn>
         </div>
@@ -223,209 +224,11 @@ export function ConfirmModal({open,onClose,onConfirm,title = "Confirmtion",messa
   );
 }
 
-// //  ─── Datagrid ──────────────────────────────
-// export function DataGrid({
-//   columns = [],
-//   data = [],
-//   total,
-//   isMultiSelect = false,
-//   pageSize = 10,
-//   onSelectionChange,
-//   headerActions,
-//   footerActions,
-// }) {
-//   const [search, setSearch] = useState("");
-//   const [page, setPage] = useState(1);
-//   const [selected, setSelected] = useState([]);
-//   const [focusedIndex, setFocusedIndex] = useState(0);
-
-//   // ─── FILTER DATA ─────────────────────────────────────────────
-//   const filteredData = useMemo(() => {
-//     if (!search) return data;
-//     return data.filter(row =>
-//       columns.some(col =>
-//         String(row[col.key] || "")
-//           .toLowerCase()
-//           .includes(search.toLowerCase())
-//       )
-//     );
-//   }, [search, data, columns]);
-
-//   // ─── PAGINATION ──────────────────────────────────────────────
-//   const totalPages = Math.ceil(total/ pageSize);
-
-//   const paginatedData = useMemo(() => {
-//     const start = (page - 1) * pageSize;
-//     return filteredData.slice(start, start + pageSize);
-//   }, [filteredData, page, pageSize]);
-
-//   // ─── SELECTION ───────────────────────────────────────────────
-//   const toggleSelect = (row) => {
-//     const exists = selected.find(r => r === row);
-//     let newSel;
-//     if (exists) {
-//       newSel = selected.filter(r => r !== row);
-//     } else {
-//       newSel = [...selected, row];
-//     }
-//     setSelected(newSel);
-//     onSelectionChange && onSelectionChange(newSel);
-//   };
-
-//   const toggleSelectAll = () => {
-//     if (selected.length === paginatedData.length) {
-//       setSelected([]);
-//       onSelectionChange && onSelectionChange([]);
-//     } else {
-//       setSelected(paginatedData);
-//       onSelectionChange && onSelectionChange(paginatedData);
-//     }
-//   };
-
-//   // ─── KEYBOARD NAVIGATION ─────────────────────────────────────
-//   useEffect(() => {
-//     const handleKey = (e) => {
-//       if (e.key === "ArrowDown") {
-//         setFocusedIndex(prev => Math.min(prev + 1, paginatedData.length - 1));
-//       }
-//       if (e.key === "ArrowUp") {
-//         setFocusedIndex(prev => Math.max(prev - 1, 0));
-//       }
-//       if (e.key === "Enter") {
-//         toggleSelect(paginatedData[focusedIndex]);
-//       }
-//     };
-//     window.addEventListener("keydown", handleKey);
-//     return () => window.removeEventListener("keydown", handleKey);
-//   }, [paginatedData, focusedIndex, selected]);
-
-//   // ─── STYLES ──────────────────────────────────────────────────
-//   const thStyle = {
-//     textAlign: "left",
-//     //padding: "10px",
-//     //fontSize: 12,
-//     //color: C.muted,
-//     borderBottom: `1px solid ${C.border}`,
-//   };
-
-//   const tdStyle = {
-//     //padding: "10px",
-//     //fontSize: 13,
-//     color: C.muted,
-//     borderBottom: `1px solid ${C.border}`,
-//   };
-
-//   return (
-//     <div style={{ background: C.card, borderRadius: 12, border: `1px solid ${C.border}` }}>
-      
-//       {/* ─── HEADER ───────────────────────── */}
-//       <div style={{
-//         padding: 12,
-//         borderBottom: `1px solid ${C.border}`,
-//         display: "flex",
-//         justifyContent: "space-between",
-//         gap: 10,
-//         flexWrap: "wrap"
-//       }}>
-//         <input
-//           placeholder="Search..."
-//           value={search}
-//           onChange={e => setSearch(e.target.value)}
-//           style={{
-//             padding: "6px 10px",
-//             borderRadius: 8,
-//             border: `1px solid ${C.border}`,
-//             minWidth: 200,
-//             width : '20%'
-//           }}
-//         />
-
-//         {headerActions && <div>{headerActions}</div>}
-//       </div>
-
-//       {/* ─── TABLE ───────────────────────── */}
-//       <div style={{ overflowX: "auto" }}>
-//         <table style={{ width: "100%", borderCollapse: "collapse" }}>
-//           <thead>
-//             <tr> 
-//               {isMultiSelect && <th style={thStyle}>
-//                 <input
-//                   type="checkbox"
-//                   checked={selected.length === paginatedData.length && paginatedData.length > 0}
-//                   onChange={toggleSelectAll}
-//                 />
-//               </th>}
-//               {columns.map(col => (
-//                 <th key={col.key} style={thStyle}>{col.label}</th>
-//               ))}
-//             </tr>
-//           </thead>
-
-//           <tbody>
-//             {paginatedData.map((row, i) => {
-//               const isSelected = selected.includes(row);
-//               const isFocused = i === focusedIndex;
-
-//               return (
-//                  <tr
-//                   key={i}
-//                   style={{
-//                     background: isFocused ? C.bg : "transparent",
-//                     cursor: "pointer"
-//                   }}
-//                   onClick={() => toggleSelect(row)}>
-//                   {isMultiSelect &&<td style={tdStyle}>
-//                     <input
-//                       type="checkbox"
-//                       checked={isSelected}
-//                       onChange={() => toggleSelect(row)}
-//                     />
-//                   </td>
-//                   }
-
-//                   {columns.map(col => (
-//                     <td key={col.key} style={tdStyle}>
-//                       {col.render ? col.render(row[col.key], row) : row[col.key]}
-//                     </td>
-//                   ))}
-//                 </tr>
-//               );
-//             })}
-//           </tbody>
-//         </table>
-//       </div>
-
-//       {/* ─── FOOTER ───────────────────────── */}
-//       <div style={{
-//         padding: 12,
-//         display: "flex",
-//         justifyContent: "space-between",
-//         alignItems: "center",
-//         borderTop: `1px solid ${C.border}`,
-//         flexWrap: "wrap",
-//         gap: 10
-//       }}>
-//         {footerActions && <div>{footerActions}</div>}
-
-        
-//         <div style={{ fontSize: 12, color: C.muted }}>Page {page} of {totalPages}</div>
-//         <div style={{ display: "flex", gap: 6 }}>
-          
-//           <Btn small variant="ghost" onClick={() => setPage(1)} disabled={page === 1}>First</Btn>
-//           <Btn small variant="ghost" onClick={() => setPage(p => Math.max(p - 1, 1))}>Prev</Btn>
-//           <Btn small variant="ghost" onClick={() => setPage(p => Math.min(p + 1, totalPages))}>Next</Btn>
-//           <Btn small variant="ghost" onClick={() => setPage(totalPages)} disabled={page === totalPages}>Last</Btn>
-//         </div>
-//       </div>
-//     </div>
-//   );
-// }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
-//  DataGrid  v2
+//  DataGrid 
 //
-//  NEW in v2:
+//  
 //    • Row focus  — click a row or use ↑ / ↓  arrow keys to move focus
 //    • focusedRow — the full row object of the currently focused row is passed
 //                   to every footer-button onClick as the 3rd argument
@@ -442,7 +245,7 @@ export function ConfirmModal({open,onClose,onConfirm,title = "Confirmtion",messa
 //  columns        Column[]        column definitions (see below)
 //  data           Row[]           rows — MUST have a unique `id` field on each row
 //  pageSize       number          initial rows per page  (default 10)
-//  selectable     boolean         show row checkboxes    (default true)
+//  selectable     boolean         show row checkboxes    (default false)
 //  footerButtons  FooterBtn[]     action buttons in footer
 //  loading        boolean         show shimmer skeleton
 //  emptyText      string          custom empty message
@@ -518,40 +321,41 @@ export function ConfirmModal({open,onClose,onConfirm,title = "Confirmtion",messa
 //    pageSize={15}
 //  />
 // ─────────────────────────────────────────────────────────────────────────────
- 
+
 export function DataGrid({
   title,
-  columns     = [],
-  data        = [],
-  pageSize: initialPageSize = 10,
-  selectable  = true,
+  columns = [],
+  data = [],
+  pageSize: initialPageSize = undefined,
+  selectable = false,
   footerButtons = [],
   HeaderButtons = [],
-  loading     = false,
-  emptyText   = "No records found",
+  loading = false,
+  emptyText = "No records found",
   // lazy mode
-  lazy        = false,
+  lazy = false,
   total: lazyTotal = 0,
   onFetch,
 }) {
   // ── STATE ──────────────────────────────────────────────────────────────────
-  const [search, setSearch]           = useState("");
-  const [sortKey, setSortKey]         = useState(null);
-  const [sortDir, setSortDir]         = useState("asc");
-  const [page, setPage]               = useState(1);
-  const [pageSize, setPageSize]       = useState(initialPageSize);
-  const [selected, setSelected]       = useState(new Set());
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(() => initialPageSize ? initialPageSize : Math.max(5, Math.floor((window.innerHeight - 220) / 45)));
+  const [selected, setSelected] = useState(new Set());
   const [visibleKeys, setVisibleKeys] = useState(columns.map(c => c.key));
   const [colDropOpen, setColDropOpen] = useState(false);
-  const [focusedIdx, setFocusedIdx]   = useState(null); // index within pageRows
- 
-  const colDropRef  = useRef(null);
-  const tableRef    = useRef(null);
+  const [focusedIdx, setFocusedIdx] = useState(null); // index within pageRows
+
+
+  const colDropRef = useRef(null);
+  const tableRef = useRef(null);
   const searchDebounce = useRef(null);
   // keep latest focusedIdx accessible in global keydown without stale closure
   const focusedIdxRef = useRef(null);
   focusedIdxRef.current = focusedIdx;
- 
+
   // ── LAZY: fire onFetch on change (debounce search) ─────────────────────────
   const fetchParams = useRef({});
   useEffect(() => {
@@ -561,7 +365,7 @@ export function DataGrid({
     if (onFetch) onFetch(params);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize, sortKey, sortDir]);
- 
+
   // search debounce for lazy
   useEffect(() => {
     if (!lazy) return;
@@ -573,15 +377,15 @@ export function DataGrid({
     return () => clearTimeout(searchDebounce.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
- 
+
   // reset page on filter change (client mode)
   useEffect(() => {
     if (!lazy) setPage(1);
   }, [search, sortKey, sortDir, pageSize, lazy]);
- 
+
   // reset focus when page changes
   useEffect(() => { setFocusedIdx(null); }, [page]);
- 
+
   // ── CLOSE COL DROPDOWN OUTSIDE ─────────────────────────────────────────────
   useEffect(() => {
     const h = e => {
@@ -591,7 +395,7 @@ export function DataGrid({
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
- 
+
   // ── DATA PIPELINE (client mode only) ──────────────────────────────────────
   const filtered = useMemo(() => {
     if (lazy) return data;
@@ -601,7 +405,7 @@ export function DataGrid({
       Object.values(row).some(v => String(v ?? "").toLowerCase().includes(q))
     );
   }, [data, search, lazy]);
- 
+
   const sorted = useMemo(() => {
     if (lazy || !sortKey) return filtered;
     return [...filtered].sort((a, b) => {
@@ -612,47 +416,47 @@ export function DataGrid({
         : String(bv ?? "").localeCompare(String(av ?? ""));
     });
   }, [filtered, sortKey, sortDir, lazy]);
- 
-  const total      = lazy ? lazyTotal : sorted.length;
+
+  const total = lazy ? lazyTotal : sorted.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const safePage   = Math.min(page, totalPages);
-  const pageRows   = lazy ? data : sorted.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const safePage = Math.min(page, totalPages);
+  const pageRows = lazy ? data : sorted.slice((safePage - 1) * pageSize, safePage * pageSize);
   const visibleCols = columns.filter(c => visibleKeys.includes(c.key));
   const from = Math.min((safePage - 1) * pageSize + 1, total);
-  const to   = Math.min(safePage * pageSize, total);
- 
+  const to = Math.min(safePage * pageSize, total);
+
   // ── FOCUSED ROW OBJECT ─────────────────────────────────────────────────────
   const focusedRow = focusedIdx !== null ? pageRows[focusedIdx] ?? null : null;
- 
+
   // ── SELECTION ──────────────────────────────────────────────────────────────
   const allPageSelected =
     pageRows.length > 0 && pageRows.every(r => selected.has(r.id));
- 
+
   const toggleAll = () => {
     const next = new Set(selected);
     pageRows.forEach(r => (allPageSelected ? next.delete(r.id) : next.add(r.id)));
     setSelected(next);
   };
- 
+
   const toggleRow = id => {
     const next = new Set(selected);
     next.has(id) ? next.delete(id) : next.add(id);
     setSelected(next);
   };
- 
+
   // ── SORT ───────────────────────────────────────────────────────────────────
   const handleSort = key => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("asc"); }
   };
- 
+
   // ── COLUMN TOGGLE ──────────────────────────────────────────────────────────
   const toggleCol = key => {
     setVisibleKeys(prev =>
       prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
     );
   };
- 
+
   // ── PAGINATION PAGE NUMBERS ────────────────────────────────────────────────
   const pageNums = [];
   for (let i = 1; i <= totalPages; i++) {
@@ -661,38 +465,38 @@ export function DataGrid({
     else if (pageNums[pageNums.length - 1] !== "…")
       pageNums.push("…");
   }
- 
+
   // ── SCROLL FOCUSED ROW INTO VIEW ───────────────────────────────────────────
   useEffect(() => {
     if (focusedIdx === null || !tableRef.current) return;
     const rows = tableRef.current.querySelectorAll("tbody tr[data-idx]");
     rows[focusedIdx]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [focusedIdx]);
- 
+
   // ── HOTKEY PARSER ──────────────────────────────────────────────────────────
   // Parses "ctrl+d", "alt+F2", "F2", "shift+enter" → { ctrl, alt, shift, key }
   const parseHotkey = raw => {
     const parts = raw.toLowerCase().split("+");
-    const key   = parts[parts.length - 1];
+    const key = parts[parts.length - 1];
     return {
-      ctrl:  parts.includes("ctrl"),
-      alt:   parts.includes("alt"),
+      ctrl: parts.includes("ctrl"),
+      alt: parts.includes("alt"),
       shift: parts.includes("shift"),
       key,
     };
   };
- 
+
   // ── GLOBAL KEYBOARD HANDLER ────────────────────────────────────────────────
   const handleKeyDown = useCallback(e => {
     const tag = e.target?.tagName?.toLowerCase();
     const inInput = tag === "input" || tag === "textarea" || tag === "select";
- 
+
     // ── Arrow navigation (works even in inputs for ↑↓) ──────────────────────
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       // only when focus is inside our grid wrapper
       if (!tableRef.current?.closest("[data-dg-root]")?.contains(document.activeElement) &&
-          !tableRef.current?.contains(document.activeElement)) return;
- 
+        !tableRef.current?.contains(document.activeElement)) return;
+
       e.preventDefault();
       const len = pageRows.length;
       if (!len) return;
@@ -706,9 +510,9 @@ export function DataGrid({
       tableRef.current?.querySelector("tbody tr[data-idx]")?.focus();
       return;
     }
- 
+
     // ── Enter = toggle checkbox on focused row ────────────────────────────
-    if (e.key === "Enter" && !inInput) {
+    if (e.key === "Enter" && selectable && !inInput ) {
       const idx = focusedIdxRef.current;
       if (idx !== null && pageRows[idx]) {
         e.preventDefault();
@@ -716,35 +520,35 @@ export function DataGrid({
       }
       return;
     }
- 
+
     // ── Hotkeys for footer buttons ─────────────────────────────────────────
     if (inInput && !e.ctrlKey && !e.altKey) return; // ignore plain keys in inputs
-    const btns = [...footerButtons , ...HeaderButtons];
+    const btns = [...footerButtons, ...HeaderButtons];
     for (const btn of btns) {
       if (!btn.hotkey) continue;
       const hk = parseHotkey(btn.hotkey);
       const keyMatch = e.key.toLowerCase() === hk.key || e.code.toLowerCase() === hk.key;
       if (
         keyMatch &&
-        !!e.ctrlKey  === hk.ctrl &&
-        !!e.altKey   === hk.alt  &&
+        !!e.ctrlKey === hk.ctrl &&
+        !!e.altKey === hk.alt &&
         !!e.shiftKey === hk.shift
       ) {
         e.preventDefault();
         const idx = focusedIdxRef.current;
-        const fr  = idx !== null ? pageRows[idx] ?? null : null;
+        const fr = idx !== null ? pageRows[idx] ?? null : null;
         btn.onClick?.(Array.from(selected), data, fr);
         return;
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageRows, selected, footerButtons, data]);
- 
+
   useEffect(() => {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
- 
+
   // ── INJECT SHIMMER KEYFRAMES ───────────────────────────────────────────────
   if (typeof document !== "undefined" && !document.getElementById("dg-shimmer-style")) {
     const s = document.createElement("style");
@@ -758,7 +562,7 @@ export function DataGrid({
     `;
     document.head.appendChild(s);
   }
- 
+
   // ── STYLES ─────────────────────────────────────────────────────────────────
   const S = {
     wrap: {
@@ -864,12 +668,12 @@ export function DataGrid({
           ? `1.5px solid ${C.accent}`
           : `1.5px solid ${C.border}`,
       background:
-        variant === "danger"  ? C.redBg  :
-        variant === "primary" ? C.accent : C.card,
+        variant === "danger" ? C.redBg :
+          variant === "primary" ? C.accent : C.card,
       fontSize: 12, fontWeight: 600,
       color:
-        variant === "danger"  ? C.red  :
-        variant === "primary" ? "#fff" : C.sub,
+        variant === "danger" ? C.red :
+          variant === "primary" ? "#fff" : C.sub,
       cursor: "pointer",
       display: "inline-flex", alignItems: "center", gap: 5,
       fontFamily: "inherit", transition: "filter .13s",
@@ -890,24 +694,24 @@ export function DataGrid({
       borderRadius: 6, height: 13,
     },
   };
- 
+
   // ── ROW BACKGROUND LOGIC ───────────────────────────────────────────────────
   const rowBg = (isSelected, isFocused) => {
     if (isFocused && isSelected) return C.accent + "22";
-    if (isFocused)               return C.accent + "14";
-    if (isSelected)              return C.accent + "0e";
+    if (isFocused) return C.accent + "14";
+    if (isSelected) return C.accent + "0e";
     return "transparent";
   };
- 
+
   // ── RENDER ─────────────────────────────────────────────────────────────────
   return (
     <div style={S.wrap} data-dg-root="1">
- 
+
       {/* ── TOOLBAR ── */}
       <div style={S.toolbar}>
         {title && <span style={S.titleText}>{title}</span>}
         <div style={S.toolbarRight}>
- 
+
           {/* Search */}
           <div style={S.searchWrap}>
             <span style={S.searchIcon}>🔍</span>
@@ -926,7 +730,7 @@ export function DataGrid({
               }}
             />
           </div>
- 
+
           {/* Column visibility */}
           <div style={{ position: "relative" }} ref={colDropRef}>
             <button
@@ -964,8 +768,8 @@ export function DataGrid({
               </div>
             )}
           </div>
-            </div>
-            <div style={S.toolbarRight}>
+        </div>
+        <div style={S.toolbarRight}>
           {/* Header buttons */}
           {HeaderButtons.length > 0 && (
             <div style={S.footerActions}>
@@ -980,16 +784,16 @@ export function DataGrid({
                 >
                   {btn.icon && <span>{btn.icon}</span>}
                   {btn.label}
-                 
+
                 </button>
               ))}
             </div>
           )}
         </div>
       </div>
- 
+
       {/* ── SELECTION + FOCUS BANNER ── */}
-      {(selected.size > 0 ) && (
+      {(selected.size > 0) && (
         <div style={S.selBar}>
           {selected.size > 0 && (
             <>
@@ -1004,7 +808,7 @@ export function DataGrid({
           )}
         </div>
       )}
- 
+
       {/* ── TABLE ── */}
       <div style={S.tableWrap}>
         <table style={S.table} ref={tableRef}>
@@ -1023,7 +827,7 @@ export function DataGrid({
               {visibleCols.map(c => {
                 const sortable = c.sortable !== false;
                 const isActive = sortKey === c.key;
-                const icon     = isActive ? (sortDir === "asc" ? " ▲" : " ▼") : " ↕";
+                const icon = isActive ? (sortDir === "asc" ? " ▲" : " ▼") : " ↕";
                 return (
                   <th
                     key={c.key}
@@ -1056,103 +860,90 @@ export function DataGrid({
               })}
             </tr>
           </thead>
- 
+
           <tbody>
             {loading
               ? /* ── SKELETON ── */
-                Array.from({ length: pageSize }).map((_, i) => (
-                  <tr key={i}>
-                    {selectable && (
-                      <td style={S.tdCheck}>
-                        <div style={{ ...S.skeleton, width: 14, height: 14, borderRadius: 3 }} />
-                      </td>
-                    )}
-                    {visibleCols.map(c => (
-                      <td key={c.key} style={S.td}>
-                        <div style={{ ...S.skeleton, width: `${45 + (i * 7 + c.key.length * 5) % 40}%` }} />
-                      </td>
-                    ))}
-                  </tr>
-                ))
- 
+              Array.from({ length: pageSize }).map((_, i) => (
+                <tr key={i}>
+                  {selectable && (
+                    <td style={S.tdCheck}>
+                      <div style={{ ...S.skeleton, width: 14, height: 14, borderRadius: 3 }} />
+                    </td>
+                  )}
+                  {visibleCols.map(c => (
+                    <td key={c.key} style={S.td}>
+                      <div style={{ ...S.skeleton, width: `${45 + (i * 7 + c.key.length * 5) % 40}%` }} />
+                    </td>
+                  ))}
+                </tr>
+              ))
+
               : pageRows.length === 0
                 ? /* ── EMPTY ── */
-                  <tr>
-                    <td colSpan={visibleCols.length + (selectable ? 1 : 0)}>
-                      <div style={S.emptyWrap}>
-                        <div style={{ fontSize: 32, marginBottom: 10, opacity: .45 }}>📭</div>
-                        {emptyText}
-                      </div>
-                    </td>
-                  </tr>
- 
+                <tr>
+                  <td colSpan={visibleCols.length + (selectable ? 1 : 0)}>
+                    <div style={S.emptyWrap}>
+                      <div style={{ fontSize: 32, marginBottom: 10, opacity: .45 }}>📭</div>
+                      {emptyText}
+                    </div>
+                  </td>
+                </tr>
+
                 : /* ── DATA ROWS ── */
-                  pageRows.map((row, ri) => {
-                    const isSelected = selected.has(row.id);
-                    const isFocused  = focusedIdx === ri;
-                    return (
-                      <tr
-                        key={row.id ?? ri}
-                        data-idx={ri}
-                        tabIndex={-1}
-                        style={{
-                          background: rowBg(isSelected, isFocused),
-                          transition: "background .1s",
-                          outline: isFocused ? `2px solid ${C.accent}` : "none",
-                          outlineOffset: "-2px",
-                          cursor: "pointer",
-                        }}
-                        onClick={() => setFocusedIdx(ri)}
-                        onMouseEnter={e => {
-                          if (!isSelected && !isFocused)
-                            e.currentTarget.style.background = "#f7f8fd";
-                        }}
-                        onMouseLeave={e => {
-                          if (!isSelected && !isFocused)
-                            e.currentTarget.style.background = "transparent";
-                        }}
-                      >
-                        {selectable && (
-                          <td style={S.tdCheck}>
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => toggleRow(row.id)}
-                              onClick={e => e.stopPropagation()}
-                              style={{ accentColor: C.accent, width: 14, height: 14, cursor: "pointer" }}
-                            />
-                          </td>
-                        )}
-                        {visibleCols.map(c => (
-                          <td key={c.key} style={S.td}>
-                            {c.render ? c.render(row[c.key], row) : (row[c.key] ?? "—")}
-                          </td>
-                        ))}
-                      </tr>
-                    );
-                  })
+                pageRows.map((row, ri) => {
+                  const isSelected = selected.has(row.id);
+                  const isFocused = focusedIdx === ri;
+                  return (
+                    <tr
+                      key={row.id ?? ri}
+                      data-idx={ri}
+                      tabIndex={-1}
+                      style={{
+                        background: rowBg(isSelected, isFocused),
+                        transition: "background .1s",
+                        outline: isFocused ? `2px solid ${C.accent}` : "none",
+                        outlineOffset: "-2px",
+                        cursor: "pointer",
+                      }}
+                      onClick={() => setFocusedIdx(ri)}
+                      onMouseEnter={e => {
+                        if (!isSelected && !isFocused)
+                          e.currentTarget.style.background = "#f7f8fd";
+                      }}
+                      onMouseLeave={e => {
+                        if (!isSelected && !isFocused)
+                          e.currentTarget.style.background = "transparent";
+                      }}
+                    >
+                      {selectable && (
+                        <td style={S.tdCheck}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleRow(row.id)}
+                            onClick={e => e.stopPropagation()}
+                            style={{ accentColor: C.accent, width: 14, height: 14, cursor: "pointer" }}
+                          />
+                        </td>
+                      )}
+                      {visibleCols.map(c => (
+                        <td key={c.key} style={S.td}>
+                          {c.render ? c.render(row[c.key], row) : (row[c.key] ?? "—")}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })
             }
           </tbody>
         </table>
       </div>
- 
+
       {/* ── FOOTER ── */}
       <div style={S.footer}>
         <div style={S.footerLeft}>
-             {/* Rows per page */}
-          <div style={S.pageSizeRow}>
-            <span>Rows:</span>
-            <select
-              style={S.pageSizeSelect}
-              value={pageSize}
-              onChange={e => { setPageSize(+e.target.value); setPage(1); }}
-            >
-              {[5, 10, 25, 50, 100].map(n => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
-          </div>
- 
+
           {/* Footer buttons */}
           {footerButtons.length > 0 && (
             <div style={S.footerActions}>
@@ -1167,14 +958,14 @@ export function DataGrid({
                 >
                   {btn.icon && <span>{btn.icon}</span>}
                   {btn.label}
-                 
+
                 </button>
               ))}
             </div>
           )}
         </div>
-      <div style={S.footerRight}>
-        
+        <div style={S.footerRight}>
+
           {/* Record count */}
           <span style={S.footerInfo}>
             {total === 0
@@ -1183,45 +974,849 @@ export function DataGrid({
             }
           </span>
           {/* Pagination */}
-        <div style={S.pagination}>
-          <button
-            style={S.pageBtn(false, safePage === 1)}
-            disabled={safePage === 1}
-            onClick={() => setPage(p => p - 1)}
-          >‹</button>
- 
-          {pageNums.map((p, i) =>
-            p === "…"
-              ? <span key={`e${i}`} style={{ padding: "0 4px", color: C.hint }}>…</span>
-              : (
-                <button
-                  key={p}
-                  style={S.pageBtn(p === safePage, false)}
-                  onClick={() => setPage(p)}
-                  onMouseEnter={e => p !== safePage && (
-                    e.currentTarget.style.borderColor = C.accent,
-                    e.currentTarget.style.color = C.accent,
-                    e.currentTarget.style.background = C.accent + "12"
-                  )}
-                  onMouseLeave={e => p !== safePage && (
-                    e.currentTarget.style.borderColor = C.border,
-                    e.currentTarget.style.color = C.sub,
-                    e.currentTarget.style.background = C.card
-                  )}
-                >
-                  {p}
-                </button>
-              )
-          )}
- 
-          <button
-            style={S.pageBtn(false, safePage === totalPages)}
-            disabled={safePage === totalPages}
-            onClick={() => setPage(p => p + 1)}
-          >›</button>
+          <div style={S.pagination}>
+            <button
+              style={S.pageBtn(false, safePage === 1)}
+              disabled={safePage === 1}
+              onClick={() => setPage(p => p - 1)}
+            >‹</button>
+
+            {pageNums.map((p, i) =>
+              p === "…"
+                ? <span key={`e${i}`} style={{ padding: "0 4px", color: C.hint }}>…</span>
+                : (
+                  <button
+                    key={p}
+                    style={S.pageBtn(p === safePage, false)}
+                    onClick={() => setPage(p)}
+                    onMouseEnter={e => p !== safePage && (
+                      e.currentTarget.style.borderColor = C.accent,
+                      e.currentTarget.style.color = C.accent,
+                      e.currentTarget.style.background = C.accent + "12"
+                    )}
+                    onMouseLeave={e => p !== safePage && (
+                      e.currentTarget.style.borderColor = C.border,
+                      e.currentTarget.style.color = C.sub,
+                      e.currentTarget.style.background = C.card
+                    )}
+                  >
+                    {p}
+                  </button>
+                )
+            )}
+
+            <button
+              style={S.pageBtn(false, safePage === totalPages)}
+              disabled={safePage === totalPages}
+              onClick={() => setPage(p => p + 1)}
+            >›</button>
+          </div>
         </div>
-      </div>
       </div>
     </div>
   );
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Extra Components — same style/theme as index.jsx
+//  Import C from your theme: import { C } from "../../utils/theme";
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  COMPONENTS
+//  ───────────────────────────────────────────────────────────────────────────
+//  1. Dropdown         — searchable, keyboard-navigable, dynamic data
+//  2. MultiDropdown    — same as Dropdown but multi-select with chips
+//  3. Tabs             — horizontal tab switcher
+//  4. Stepper          — progress stepper (e.g. wizard forms)
+//  5. EmptyState       — consistent "no data" / "not found" placeholder
+//  6. Spinner          — inline or overlay loading spinner
+//  7. SectionDivider   — labelled horizontal divider
+//  8. KVTable          — key → value rows (for detail panels / summaries)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── inject shared keyframes once ────────────────────────────────────────────
+if (typeof document !== "undefined" && !document.getElementById("xc-shared-style")) {
+  const s = document.createElement("style");
+  s.id = "xc-shared-style";
+  s.textContent = `
+    @keyframes xc-spin   { to { transform: rotate(360deg); } }
+    @keyframes xc-fadeIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+  `;
+  document.head.appendChild(s);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. DROPDOWN
+//
+//  Props
+//  ─────
+//  options       { value, label, icon?, sub?, disabled? }[]   required
+//  value         any                         controlled value
+//  onChange      (value, option) => void     fired on selection
+//  placeholder   string                      default "Select…"
+//  label         string                      floats above the trigger
+//  disabled      boolean
+//  clearable     boolean                     show ✕ to clear
+//  width         string | number             CSS width (default "100%")
+//  footerButtons { label, icon, onClick }[]  action buttons inside dropdown footer
+//
+//  Keyboard
+//  ────────
+//  ↑ / ↓     navigate options
+//  Enter      confirm focused option
+//  Escape     close
+//  Any char   filters list (search)
+// ─────────────────────────────────────────────────────────────────────────────
+export function Dropdown({
+  options = [],
+  value,
+  onChange,
+  placeholder = "Select…",
+  label,
+  disabled = false,
+  clearable = false,
+  width = "100%",
+  footerButtons = [],
+  keyField = "id",
+  displayField = "name"
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [focIdx, setFocIdx] = useState(-1);
+  const [isShiftTab, SetIsShiftTab] = useState(false);
+  const wrapRef = useRef(null);
+  const listRef = useRef(null);
+  const searchRef = useRef(null);
+  const clickTimer = useRef(null);
+
+  const selected = options.find(o => o[keyField] == value) ?? null;
+
+  const filtered = search
+    ? options.filter(o =>
+      (o[displayField] + " " + (o.sub ?? "")).toLowerCase().includes(search.toLowerCase())
+    )
+    : options;
+
+  // close on outside click
+  useEffect(() => {
+    const h = e => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false);
+        setSearch("");
+        setFocIdx(-1);
+      }
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  //list click focus and double click setvalue
+  const handleItemClick = useCallback((opt, i) => {
+    if (opt.disabled) return;
+
+    // if (clickTimer.current) {
+    //   // second click within 250ms → double-click → SELECT
+    //   clearTimeout(clickTimer.current);
+    //   clickTimer.current = null;
+      onChange?.(opt[keyField], opt);
+      setOpen(false);
+      setSearch("");
+    // } else {
+    //   // first click → FOCUS only, wait to confirm it's not a double-click
+    //   setFocIdx(i);
+    //   clickTimer.current = setTimeout(() => {
+    //     clickTimer.current = null;
+    //   }, 250);
+    // }
+  });
+
+  // auto-focus search when opened
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => searchRef.current?.focus(), 30);
+      const idx = filtered.findIndex(o => o[keyField] == value);
+      setFocIdx(idx >= 0 ? idx : 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // scroll focused item into view
+  useEffect(() => {
+    if (!listRef.current || focIdx < 0) return;
+    const items = listRef.current.querySelectorAll("[data-xc-item]");
+    items[focIdx]?.scrollIntoView({ block: "nearest" });
+  }, [focIdx]);
+
+  const handleKeyDown = useCallback(e => {
+
+    if (e.key === "ArrowDown") { e.preventDefault(); setFocIdx(i => Math.min(i + 1, filtered.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setFocIdx(i => Math.max(i - 1, 0)); }
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      setValue();
+    }
+    else if (e.key === "Escape" || e.key === "Tab") {
+      setOpen(false); setSearch(""); setFocIdx(-1);
+      if (e.key === "Tab" && e.shiftKey) SetIsShiftTab(true); // ← add this
+    }
+
+
+    for (const btn of footerButtons) {
+      if (!btn.hotkey) continue;
+      const needCtrl = btn.hotkey.startsWith("ctrl+");
+      const bareKey = needCtrl ? btn.hotkey.replace("ctrl+", "") : btn.hotkey;
+      const matchMod = needCtrl ? (e.ctrlKey || e.metaKey) : true;
+      if (matchMod && e.key.toLowerCase() === bareKey.toLowerCase()) {
+        e.preventDefault();
+        fireBtnAction(btn);
+        return;
+      }
+    }
+  }, [open, filtered, focIdx, onChange]);
+
+  const fireBtnAction = useCallback((btn) => {
+    const focused = filtered[focIdx] ?? null;
+    btn.onClick?.(focIdx, focused);   // caller receives (index, option)
+  }, [filtered, focIdx]);
+
+  const setValue = () => {
+    const opt = filtered[focIdx];
+    if (opt && !opt.disabled) {
+      onChange?.(opt[keyField], opt);
+      setOpen(false);
+      setSearch("");
+    }
+  }
+  const S = {
+    wrap: { position: "relative", width },
+    lbl: { display: "block", fontSize: 12, fontWeight: 600, color: C.sub, marginBottom: 6 },
+    trigger: {
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      height: 38, padding: "0 12px",
+      border: `1.5px solid ${open ? C.accent : C.border}`,
+      borderRadius: 10, background: disabled ? C.bg : C.card,
+      cursor: disabled ? "not-allowed" : "pointer", fontSize: 13,
+      color: selected ? C.text : C.hint, fontFamily: "inherit",
+      boxShadow: open ? `0 0 0 3px ${C.accent}18` : "none",
+      transition: "border .15s, box-shadow .15s",
+      userSelect: "none", gap: 8,
+      opacity: disabled ? 0.6 : 1,
+    },
+    dropdown: {
+      position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0,
+      background: C.card, border: `1px solid ${C.border}`,
+      borderRadius: 12, boxShadow: "0 8px 30px #00000018",
+      zIndex: 500, overflow: "hidden",
+      animation: "xc-fadeIn .13s ease",
+    },
+    searchWrap: {
+      padding: "10px 10px 8px", borderBottom: `1px solid ${C.border}`,
+      position: "relative", display: "flex", alignItems: "center",
+    },
+    searchIcon: { position: "absolute", left: 20, fontSize: 12, color: C.hint, pointerEvents: "none" },
+    searchInput: {
+      width: "100%", height: 30, padding: "0 8px 0 26px",
+      border: `1.5px solid ${C.border}`, borderRadius: 8,
+      fontSize: 12.5, fontFamily: "inherit",
+      background: C.bg, color: C.text, outline: "none",
+      transition: "border .15s",
+    },
+    list: { maxHeight: 170, overflowY: "auto", padding: "6px" },
+    item: (isFoc, isSel, isDis) => ({
+      display: "flex", alignItems: "center", gap: 10,
+      padding: "8px 10px", borderRadius: 8, cursor: isDis ? "not-allowed" : "pointer",
+      background: isFoc ? C.accent + "14" : isSel ? C.accent + "0d" : "transparent",
+      opacity: isDis ? 0.45 : 1,
+      transition: "background .1s",
+    }),
+    itemLabel: isSel => ({ fontSize: 13, color: C.text, fontWeight: isSel ? 600 : 400 }),
+    itemSub: { fontSize: 11, color: C.hint, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+    noMatch: { padding: "20px 10px", textAlign: "center", fontSize: 12, color: C.hint },
+    footer: { borderTop: `1px solid ${C.border}`, padding: "8px 10px", display: "flex", gap: 6, flexWrap: "wrap" },
+    footBtn: {
+      flex: 1, height: 28, borderRadius: 8,
+      border: `1.5px solid ${C.border}`, background: C.bg,
+      fontSize: 11.5, fontWeight: 600, color: C.sub,
+      cursor: "pointer", fontFamily: "inherit",
+      display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+      transition: "all .13s",
+    },
+    caret: { fontSize: 10, color: C.hint, transition: "transform .15s", transform: open ? "rotate(180deg)" : "rotate(0deg)", flexShrink: 0 },
+    clearBtn: { background: "none", border: "none", cursor: "pointer", color: C.hint, fontSize: 14, lineHeight: 1, padding: 0, display: "flex", alignItems: "center" },
+  };
+
+  return (
+    <div style={S.wrap} ref={wrapRef} onKeyDown={handleKeyDown}>
+      {/* {label && <label style={S.lbl}>{label}</label>} */}
+
+      <div style={S.trigger} tabIndex={disabled ? -1 : 0}
+        onClick={() => !disabled} role="combobox" aria-expanded={open}
+        onFocus={() => {
+          if (isShiftTab) { SetIsShiftTab(false); return; } 
+          !disabled && setOpen(true);
+        }}>
+
+        <span style={{ display: "flex", alignItems: "center", gap: 7, flex: 1, minWidth: 0, overflow: "hidden" }}>
+          {selected?.icon && <span style={{ fontSize: 14 }}>{selected.icon}</span>}
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {selected ? selected[displayField] : placeholder}
+          </span>
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+          {clearable && selected && (
+            <button style={S.clearBtn} onClick={e => { e.stopPropagation(); onChange?.(null, null); }}>✕</button>
+          )}
+          <span style={S.caret}>▾</span>
+        </span>
+      </div>
+
+      {open && (
+        <div style={S.dropdown}>
+          {/* Search */}
+          <div style={S.searchWrap}>
+            <span style={S.searchIcon}>🔍</span>
+            <input
+              tabIndex={-1}
+              ref={searchRef}
+              style={S.searchInput}
+              placeholder="Search…"
+              value={search}
+              onChange={e => { setSearch(e.target.value); setFocIdx(0); }}
+              // onKeyDown={handleKeyDown}
+              onFocus={e => { e.target.style.borderColor = C.accent; }}
+              onBlur={e => { e.target.style.borderColor = C.border; }}
+            />
+          </div>
+
+          {/* List */}
+          <div style={S.list} ref={listRef}>
+            {filtered.length === 0
+              ? <div style={S.noMatch}>📭 No matches</div>
+              : filtered.map((opt, i) => {
+                const isFoc = i === focIdx;
+                const isSel = opt[keyField] == value;
+                return (
+                  <div
+                    key={opt[keyField]}
+                    // onKeyDown={handleKeyDown}
+                    data-xc-item
+                    style={S.item(isFoc, isSel, opt.disabled)}
+                    onClick={() => handleItemClick(opt, i)}
+                  >
+                    {opt.icon && <span style={{ fontSize: 14, flexShrink: 0, width: 20, textAlign: "center" }}>{opt.icon}</span>}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={S.itemLabel(isSel)}>{opt[displayField]}</div>
+                      {opt.sub && <div style={S.itemSub}>{opt.sub}</div>}
+                    </div>
+                    {isSel && <span style={{ fontSize: 14, color: C.accent, flexShrink: 0 }}>✓</span>}
+                  </div>
+                );
+              })
+            }
+          </div>
+
+          {/* Footer buttons */}
+          {footerButtons.length > 0 && (
+            <div style={S.footer}>
+              {footerButtons.map((btn, i) => (
+                <button
+                  key={i}
+                  tabIndex={-1}
+                  style={S.footBtn}
+                  onClick={() => fireBtnAction(btn)}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.sub; }}
+                >
+                  {btn.icon && <span>{btn.icon}</span>}
+                  {btn.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. MULTI-DROPDOWN
+//
+//  Same keyboard UX as Dropdown but allows multiple selections.
+//  Selected items render as removable chips inside the trigger.
+//
+//  Props
+//  ─────
+//  options       { value, label, icon?, sub?, disabled? }[]
+//  value         any[]                        array of selected values
+//  onChange      (values, options) => void
+//  placeholder   string
+//  label         string
+//  disabled      boolean
+//  maxVisible    number                        max chips shown before "+N more" (default 3)
+//  width         string | number
+//  footerButtons { label, icon, onClick }[]
+// ─────────────────────────────────────────────────────────────────────────────
+export function MultiDropdown({
+  options = [],
+  value = [],
+  onChange,
+  placeholder = "Select…",
+  label,
+  disabled = false,
+  maxVisible = 3,
+  width = "100%",
+  footerButtons = [],
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [focIdx, setFocIdx] = useState(0);
+  const wrapRef = useRef(null);
+  const searchRef = useRef(null);
+  const listRef = useRef(null);
+
+  const selectedOpts = options.filter(o => value.includes(o.value));
+  const filtered = search
+    ? options.filter(o => (o.label + " " + (o.sub ?? "")).toLowerCase().includes(search.toLowerCase()))
+    : options;
+
+  useEffect(() => {
+    const h = e => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false); setSearch(""); setFocIdx(0);
+      }
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  useEffect(() => {
+    if (open) setTimeout(() => searchRef.current?.focus(), 30);
+  }, [open]);
+
+  useEffect(() => {
+    if (!listRef.current || focIdx < 0) return;
+    const items = listRef.current.querySelectorAll("[data-xc-item]");
+    items[focIdx]?.scrollIntoView({ block: "nearest" });
+  }, [focIdx]);
+
+  const toggle = opt => {
+    if (opt.disabled) return;
+    const next = value.includes(opt.value)
+      ? value.filter(v => v !== opt.value)
+      : [...value, opt.value];
+    onChange?.(next, options.filter(o => next.includes(o.value)));
+  };
+
+  const handleKeyDown = useCallback(e => {
+    if (!open) {
+      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") { e.preventDefault(); setOpen(true); }
+      return;
+    }
+    if (e.key === "ArrowDown") { e.preventDefault(); setFocIdx(i => Math.min(i + 1, filtered.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setFocIdx(i => Math.max(i - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); const opt = filtered[focIdx]; if (opt) toggle(opt); }
+    else if (e.key === "Escape") { setOpen(false); setSearch(""); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, filtered, focIdx, value]);
+
+  const visibleChips = selectedOpts.slice(0, maxVisible);
+  const extra = selectedOpts.length - maxVisible;
+
+  const S = {
+    wrap: { position: "relative", width },
+    lbl: { display: "block", fontSize: 12, fontWeight: 600, color: C.sub, marginBottom: 6 },
+    trigger: {
+      display: "flex", alignItems: "center", flexWrap: "wrap",
+      minHeight: 38, padding: "4px 10px",
+      border: `1.5px solid ${open ? C.accent : C.border}`,
+      borderRadius: 10, background: disabled ? C.bg : C.card,
+      cursor: disabled ? "not-allowed" : "pointer",
+      boxShadow: open ? `0 0 0 3px ${C.accent}18` : "none",
+      gap: 5, opacity: disabled ? 0.6 : 1,
+      transition: "border .15s, box-shadow .15s",
+    },
+    chip: {
+      display: "inline-flex", alignItems: "center", gap: 4,
+      background: C.accent + "18", color: C.accent,
+      borderRadius: 6, padding: "2px 7px 2px 8px",
+      fontSize: 11.5, fontWeight: 600,
+    },
+    chipRemove: { background: "none", border: "none", cursor: "pointer", color: C.accent, fontSize: 12, padding: 0, lineHeight: 1, display: "flex", alignItems: "center" },
+    extra: { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "2px 7px", fontSize: 11, fontWeight: 600, color: C.hint },
+    caret: { marginLeft: "auto", fontSize: 10, color: C.hint, transition: "transform .15s", transform: open ? "rotate(180deg)" : "rotate(0deg)", flexShrink: 0 },
+    dropdown: { position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: "0 8px 30px #00000018", zIndex: 500, overflow: "hidden", animation: "xc-fadeIn .13s ease" },
+    searchWrap: { padding: "10px 10px 8px", borderBottom: `1px solid ${C.border}`, position: "relative", display: "flex", alignItems: "center" },
+    searchIcon: { position: "absolute", left: 20, fontSize: 12, color: C.hint, pointerEvents: "none" },
+    searchInput: { width: "100%", height: 30, padding: "0 8px 0 26px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 12.5, fontFamily: "inherit", background: C.bg, color: C.text, outline: "none" },
+    list: { maxHeight: 224, overflowY: "auto", padding: "6px" },
+    item: (isFoc, isDis) => ({ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, cursor: isDis ? "not-allowed" : "pointer", background: isFoc ? C.accent + "14" : "transparent", opacity: isDis ? 0.45 : 1, transition: "background .1s" }),
+    check: { width: 16, height: 16, borderRadius: 4, border: `2px solid ${C.border}`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", transition: "all .1s" },
+    checkOn: { width: 16, height: 16, borderRadius: 4, border: `2px solid ${C.accent}`, background: C.accent, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" },
+    footer: { borderTop: `1px solid ${C.border}`, padding: "8px 10px", display: "flex", gap: 6, flexWrap: "wrap" },
+    footBtn: { flex: 1, height: 28, borderRadius: 8, border: `1.5px solid ${C.border}`, background: C.bg, fontSize: 11.5, fontWeight: 600, color: C.sub, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, transition: "all .13s" },
+    clearAllBtn: { height: 28, padding: "0 10px", borderRadius: 8, border: `1.5px solid ${C.red}33`, background: C.redBg, fontSize: 11, fontWeight: 600, color: C.red, cursor: "pointer", fontFamily: "inherit" },
+    doneBtn: { height: 28, padding: "0 12px", borderRadius: 8, border: `1.5px solid ${C.accent}44`, background: C.accent + "0d", fontSize: 11.5, fontWeight: 600, color: C.accent, cursor: "pointer", fontFamily: "inherit" },
+  };
+
+  return (
+    <div style={S.wrap} ref={wrapRef} onKeyDown={handleKeyDown} tabIndex={disabled ? -1 : 0}>
+      {label && <label style={S.lbl}>{label}</label>}
+
+      <div style={S.trigger} onClick={() => !disabled && setOpen(o => !o)}>
+        {selectedOpts.length === 0
+          ? <span style={{ fontSize: 13, color: C.hint, flex: 1 }}>{placeholder}</span>
+          : <>
+            {visibleChips.map(o => (
+              <span key={o.value} style={S.chip}>
+                {o.icon && <span>{o.icon}</span>}
+                {o.label}
+                <button style={S.chipRemove} onClick={e => { e.stopPropagation(); toggle(o); }}>✕</button>
+              </span>
+            ))}
+            {extra > 0 && <span style={S.extra}>+{extra} more</span>}
+          </>
+        }
+        <span style={S.caret}>▾</span>
+      </div>
+
+      {open && (
+        <div style={S.dropdown}>
+          <div style={S.searchWrap}>
+            <span style={S.searchIcon}>🔍</span>
+            <input
+              ref={searchRef}
+              style={S.searchInput}
+              placeholder="Search…"
+              value={search}
+              onChange={e => { setSearch(e.target.value); setFocIdx(0); }}
+              onKeyDown={handleKeyDown}
+            />
+          </div>
+
+          <div style={S.list} ref={listRef}>
+            {filtered.length === 0
+              ? <div style={{ padding: "18px 10px", textAlign: "center", fontSize: 12, color: C.hint }}>📭 No matches</div>
+              : filtered.map((opt, i) => {
+                const isSel = value.includes(opt.value);
+                const isFoc = i === focIdx;
+                return (
+                  <div key={opt.value} data-xc-item style={S.item(isFoc, opt.disabled)} onClick={() => toggle(opt)} onMouseEnter={() => setFocIdx(i)}>
+                    <div style={isSel ? S.checkOn : S.check}>
+                      {isSel && <span style={{ fontSize: 10, color: "#fff", fontWeight: 800 }}>✓</span>}
+                    </div>
+                    {opt.icon && <span style={{ fontSize: 14 }}>{opt.icon}</span>}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, color: C.text, fontWeight: isSel ? 600 : 400 }}>{opt.label}</div>
+                      {opt.sub && <div style={{ fontSize: 11, color: C.hint, marginTop: 1 }}>{opt.sub}</div>}
+                    </div>
+                  </div>
+                );
+              })
+            }
+          </div>
+
+          <div style={S.footer}>
+            {selectedOpts.length > 0 && (
+              <button style={S.clearAllBtn} onClick={() => onChange?.([], [])}>✕ Clear all</button>
+            )}
+            {footerButtons.map((btn, i) => (
+              <button key={i} style={S.footBtn}
+                onClick={() => { btn.onClick?.(); setOpen(false); }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.sub; }}
+              >
+                {btn.icon && <span>{btn.icon}</span>}
+                {btn.label}
+              </button>
+            ))}
+            <button style={S.doneBtn} onClick={() => setOpen(false)}>✓ Done</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. TABS
+//
+//  Props
+//  ─────
+//  tabs      { key, label, icon?, badge? }[]
+//  active    string                           controlled active key
+//  onChange  (key) => void
+//  variant   "underline" | "pill"             default "underline"
+// ─────────────────────────────────────────────────────────────────────────────
+export function Tabs({ tabs = [], active, onChange, variant = "underline" }) {
+  return (
+    <div style={{
+      display: "flex", gap: variant === "pill" ? 4 : 0,
+      borderBottom: variant === "underline" ? `2px solid ${C.border}` : "none",
+      background: variant === "pill" ? C.bg : "transparent",
+      borderRadius: variant === "pill" ? 10 : 0,
+      padding: variant === "pill" ? 4 : 0,
+      flexWrap: "wrap",
+    }}>
+      {tabs.map(tab => {
+        const isActive = tab.key === active;
+        return (
+          <button
+            key={tab.key}
+            onClick={() => onChange?.(tab.key)}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: variant === "pill" ? "6px 14px" : "10px 16px",
+              fontSize: 13, fontWeight: isActive ? 700 : 500,
+              cursor: "pointer", border: "none", fontFamily: "inherit",
+              color: isActive ? C.accent : C.muted,
+              background: variant === "pill"
+                ? isActive ? C.card : "transparent"
+                : "transparent",
+              borderRadius: variant === "pill" ? 8 : 0,
+              borderBottom: variant === "underline"
+                ? `2px solid ${isActive ? C.accent : "transparent"}`
+                : "none",
+              marginBottom: variant === "underline" ? -2 : 0,
+              boxShadow: variant === "pill" && isActive ? "0 1px 4px #00000010" : "none",
+              transition: "all .15s", whiteSpace: "nowrap",
+            }}
+            onMouseEnter={e => { if (!isActive) e.currentTarget.style.color = C.accent; }}
+            onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = C.muted; }}
+          >
+            {tab.icon && <span style={{ fontSize: 14 }}>{tab.icon}</span>}
+            {tab.label}
+            {tab.badge != null && (
+              <span style={{
+                background: isActive ? C.accent : C.border,
+                color: isActive ? "#fff" : C.sub,
+                borderRadius: 20, padding: "1px 7px",
+                fontSize: 10, fontWeight: 700, minWidth: 18, textAlign: "center",
+              }}>{tab.badge}</span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. STEPPER
+//
+//  Props
+//  ─────
+//  steps    { key, label, icon? }[]
+//  active   string                  active step key
+//  done     string[]                array of completed step keys
+// ─────────────────────────────────────────────────────────────────────────────
+export function Stepper({ steps = [], active, done = [] }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", overflowX: "auto" }}>
+      {steps.map((step, i) => {
+        const isDone = done.includes(step.key);
+        const isActive = step.key === active;
+        const color = isDone ? C.green : isActive ? C.accent : C.hint;
+        const bg = isDone ? C.greenBg : isActive ? C.accent + "18" : C.bg;
+        return (
+          <div key={step.key} style={{ display: "flex", alignItems: "center", flex: i < steps.length - 1 ? 1 : 0, minWidth: 0 }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flexShrink: 0 }}>
+              <div style={{ width: 34, height: 34, borderRadius: "50%", background: bg, border: `2px solid ${color}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isDone ? 14 : 13, fontWeight: 700, color, transition: "all .2s" }}>
+                {isDone ? "✓" : step.icon ?? (i + 1)}
+              </div>
+              <span style={{ fontSize: 11, fontWeight: isActive ? 700 : 500, color: isActive ? C.text : C.muted, whiteSpace: "nowrap", textAlign: "center" }}>{step.label}</span>
+            </div>
+            {i < steps.length - 1 && (
+              <div style={{ flex: 1, height: 2, marginBottom: 20, background: isDone ? C.green : C.border, minWidth: 16, transition: "background .2s" }} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. EMPTY STATE
+//
+//  Props
+//  ─────
+//  icon     string    emoji or icon (default "📭")
+//  title    string
+//  sub      string
+//  action   ReactNode  optional CTA button
+// ─────────────────────────────────────────────────────────────────────────────
+export function EmptyState({ icon = "📭", title = "Nothing here", sub, action }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "52px 24px", textAlign: "center", background: C.card, borderRadius: 14, border: `1px dashed ${C.border}` }}>
+      <div style={{ fontSize: 42, marginBottom: 14, opacity: 0.5, lineHeight: 1 }}>{icon}</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6 }}>{title}</div>
+      {sub && <div style={{ fontSize: 13, color: C.muted, maxWidth: 320, lineHeight: 1.5 }}>{sub}</div>}
+      {action && <div style={{ marginTop: 18 }}>{action}</div>}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. SPINNER
+//
+//  Props
+//  ─────
+//  size     number    diameter in px (default 22)
+//  color    string    (default C.accent)
+//  overlay  boolean   full-parent overlay with semi-transparent bg
+//  label    string    text below spinner (overlay only)
+// ─────────────────────────────────────────────────────────────────────────────
+export function Spinner({ size = 22, color, overlay = false, label }) {
+  const c = color ?? C.accent;
+  const spinner = (
+    <div style={{ width: size, height: size, borderRadius: "50%", border: `${Math.max(2, size / 10)}px solid ${c}22`, borderTopColor: c, animation: "xc-spin .7s linear infinite", flexShrink: 0 }} />
+  );
+  if (!overlay) return spinner;
+  return (
+    <div style={{ position: "absolute", inset: 0, background: C.card + "cc", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, zIndex: 100, borderRadius: "inherit" }}>
+      {spinner}
+      {label && <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>{label}</span>}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. SECTION DIVIDER
+//
+//  Props
+//  ─────
+//  label    string    text in the middle of the line
+//  action   ReactNode optional right-side action
+// ─────────────────────────────────────────────────────────────────────────────
+export function SectionDivider({ label, action }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "6px 0" }}>
+      <div style={{ flex: 1, height: 1, background: C.border }} />
+      {label && <span style={{ fontSize: 11, fontWeight: 700, color: C.hint, textTransform: "uppercase", letterSpacing: ".08em", whiteSpace: "nowrap" }}>{label}</span>}
+      {action}
+      <div style={{ flex: 1, height: 1, background: C.border }} />
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. KV TABLE  (key → value, for detail panels / summaries)
+//
+//  Props
+//  ─────
+//  rows   { label, value, icon?, badge?, color? }[]
+//  cols   1 | 2       number of columns (default 1)
+// ─────────────────────────────────────────────────────────────────────────────
+export function KVTable({ rows = [], cols = 1 }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: "2px 16px" }}>
+      {rows.map((r, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: "9px 0", borderBottom: `1px solid ${C.border}` }}>
+          <span style={{ fontSize: 12, color: C.muted, fontWeight: 500, display: "flex", alignItems: "center", gap: 5 }}>
+            {r.icon && <span style={{ fontSize: 13 }}>{r.icon}</span>}
+            {r.label}
+          </span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: r.color ?? C.text, textAlign: "right", marginLeft: 12 }}>
+            {r.badge
+              ? <span style={{ background: (r.color ?? C.accent) + "18", color: r.color ?? C.accent, borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 600 }}>{r.value}</span>
+              : r.value
+            }
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  USAGE EXAMPLES (copy-paste ready)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+//  /* ── Dropdown ── */
+//  const [city, setCity] = useState(null);
+//  <Dropdown
+//    label="City"
+//    value={city}
+//    onChange={(v, opt) => setCity(v)}
+//    clearable
+//    options={[
+//      { value: "mum", label: "Mumbai",    icon: "🏙", sub: "Maharashtra" },
+//      { value: "del", label: "Delhi",     icon: "🏛", sub: "NCR" },
+//      { value: "blr", label: "Bengaluru", icon: "🌿", sub: "Karnataka" },
+//    ]}
+//    footerButtons={[{ icon: "➕", label: "Add new city", onClick: () => openAddCity() }]}
+//  />
+//
+//  /* ── MultiDropdown ── */
+//  const [tags, setTags] = useState([]);
+//  <MultiDropdown
+//    label="Tags"
+//    value={tags}
+//    onChange={(vals) => setTags(vals)}
+//    options={tagOptions}
+//  />
+//
+//  /* ── Tabs ── */
+//  const [tab, setTab] = useState("overview");
+//  <Tabs
+//    active={tab}
+//    onChange={setTab}
+//    variant="pill"
+//    tabs={[
+//      { key: "overview", label: "Overview", icon: "📊" },
+//      { key: "invoices", label: "Invoices",  icon: "🧾", badge: 12 },
+//      { key: "settings", label: "Settings", icon: "⚙️" },
+//    ]}
+//  />
+//
+//  /* ── Stepper ── */
+//  <Stepper
+//    steps={[
+//      { key: "info",    label: "Basic Info" },
+//      { key: "billing", label: "Billing" },
+//      { key: "review",  label: "Review" },
+//      { key: "done",    label: "Done" },
+//    ]}
+//    active="billing"
+//    done={["info"]}
+//  />
+//
+//  /* ── EmptyState ── */
+//  <EmptyState
+//    icon="🧾"
+//    title="No invoices yet"
+//    sub="Create your first invoice to get started"
+//    action={<Btn onClick={openNew}>+ New Invoice</Btn>}
+//  />
+//
+//  /* ── Spinner ── */
+//  <Spinner size={28} />
+//  <div style={{ position: "relative", minHeight: 120 }}>
+//    <Spinner overlay label="Loading data…" />
+//  </div>
+//
+//  /* ── SectionDivider ── */
+//  <SectionDivider label="Billing Details" />
+//  <SectionDivider label="or" action={<Btn small variant="ghost">Import CSV</Btn>} />
+//
+//  /* ── KVTable ── */
+//  <KVTable
+//    cols={2}
+//    rows={[
+//      { label: "Invoice No",  value: "INV-2024-0042" },
+//      { label: "Status",      value: "Paid", badge: true, color: C.green },
+//      { label: "Amount",      value: "₹1,24,500", color: C.accent },
+//      { label: "Due Date",    value: "31 Mar 2025", icon: "📅" },
+//    ]}
+//  />
+// ─────────────────────────────────────────────────────────────────────────────

@@ -1,7 +1,8 @@
 import { useState, useRef } from "react";
 import { C } from "../utils/theme";
-import { fmt } from "../utils/format";
-import { Btn, Card, Badge, Modal, Field, PageHeader, TableWrap } from "../components/ui";
+import { fmt ,fmtDateShort} from "../utils/format";
+import { callAPI } from "../utils/callserver";
+import { Btn, Card, Badge, Modal, Field, PageHeader, TableWrap, DataGrid} from "../components/ui";
 
 export default function SaleEntry({ sales, setSales, products, setProducts, accounts }) {
   const customers = accounts.filter(a => a.type === "customer");
@@ -10,6 +11,57 @@ export default function SaleEntry({ sales, setSales, products, setProducts, acco
   const [form, setForm]       = useState({ customerId: customers[0]?.id || "", invoiceNo: "SAL-00" + (sales.length + 3), date: new Date().toISOString().slice(0, 10), items: [] });
   const [barInput, setBarInput] = useState("");
   const barRef = useRef(null);
+  const loadModelref = useRef({});
+  const [list, setList] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+
+
+   // Fetch accounts from API
+    const fetchTransaction = async (loadModel) => {
+      try {
+        loadModelref.current = loadModel
+      
+        let url = "transactions";
+        url += `?page=${loadModel.page}`;
+        url += `&limit=${loadModel.pageSize}`;
+        url += loadModel.search ? `&search=${loadModel.search}` : "";
+        //console.log(url);
+        setLoading(true);
+        const res = await callAPI(url, "GET");
+        if (res.success) {
+          setList(res?.data ?? []);
+          setTotal(res?.pagination?.total ?? 0)
+        }
+      } catch (err) {
+        console.error("Error fetching transactions:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    
+  // Open modal for add/edit
+  const open = async (a) => {
+    //const res = await callAPI("groups", "GET");
+    if (res.success)
+      setGroupData(res?.data ?? []);
+    if (a) {
+      setForm({
+        name: a.name || "",
+        group: a.group || 1,
+        city: a.city || "",
+        contact_no: a.contact_no || "",
+        gst: a.gstin || "",
+        opening: a.opening || 0
+      });
+      setEdit(a.id);
+    } else {
+      setForm({ name: "", group: 1, city: "", contact_no: "", gst: "", opening: 0 });
+      setEdit(null);
+    }
+    setModal(true);
+  };
 
   const scanBarcode = (val) => {
     const prod = products.find(p => p.barcode === val.trim());
@@ -51,35 +103,67 @@ export default function SaleEntry({ sales, setSales, products, setProducts, acco
       <PageHeader
         title="Sale Entry"
         sub="Barcode-based billing and invoice generation."
-        action={
-          <Btn onClick={() => { setModal(true); setTimeout(() => barRef.current?.focus(), 100); }}>
-            + New Sale
-          </Btn>
-        }
       />
 
       <Card noPad>
-          <TableWrap>
-            <table>
-          <thead>
-            <tr><th>Invoice</th><th>Customer</th><th>Date</th><th>Items</th><th>Total</th></tr>
-          </thead>
-          <tbody>
-            {[...sales].reverse().map(s => {
-              const cust = accounts.find(a => a.id === s.customerId);
-              return (
-                <tr key={s.id}>
-                  <td><span className="mono" style={{ color: C.accent, fontSize: 12 }}>{s.invoiceNo}</span></td>
-                  <td style={{ fontWeight: 600, color: C.text }}>{cust?.name || "—"}</td>
-                  <td style={{ color: C.hint }}>{s.date}</td>
-                  <td><Badge color={C.green}>{s.items.length} items</Badge></td>
-                  <td style={{ fontWeight: 700, color: C.green }}>{fmt(s.total)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-         </TableWrap>
+
+         <DataGrid
+                   title=""
+                   columns={[
+                     {
+                       key: "bill_no",
+                       label: "Bill No",
+                       render: (value, row) => {
+                         return <span style={{ fontWeight: 600, color: C.text }}>{value}</span>;
+                       },
+                     },
+                    { key: "date", label: "Date" ,
+                       render: (value, row) => {
+                         return <span>{fmtDateShort(value)}</span>;
+                       },
+                    },
+                     { key: "customer_name", label: "Customer" },
+                     { key: "item_count", label: "No Items" },
+                     { key: "final_amount", label: "Bill Amount" , render: (value, row) => {
+                         return <span style={{ fontWeight: 600, color: C.text }}>{value}</span>;
+                       },},
+                   ]}
+                   data={list} // each item must have an `id` field
+                   pageSize={15}
+                   lazy={true}
+                   total={total}
+                   selectable={true}
+                   onFetch={(loadModel) => {
+                     fetchTransaction(loadModel);
+                   }}
+                   HeaderButtons={[
+                     {
+                       key: "Add",
+                       label: "Add Sale",
+                       icon: "+",
+                       variant: "primary",
+                       hotkey: "ctrl+a",
+                       onClick: (ids, all, focused) => open(null),
+                     },
+                   ]}
+                   footerButtons={[
+                     {
+                       key: "edit",
+                       label: "Edit",
+                       icon: "⬇",
+                       hotkey: "ctrl+e",
+                       onClick: (ids, all, focused) => open(focused),
+                     },
+                     {
+                       key: "del",
+                       label: "Delete",
+                       icon: "🗑",
+                       variant: "danger",
+                       hotkey: "ctrl+d",
+                       onClick: (ids, all, focused) => deleteTransaction(false, focused),
+                     },
+                   ]}
+                 />
       </Card>
 
       <Modal open={modal} onClose={() => setModal(false)} title="New Sale Entry" width={680}>

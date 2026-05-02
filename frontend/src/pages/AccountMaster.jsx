@@ -1,26 +1,32 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { C } from "../utils/theme";
 import { fmt } from "../utils/format";
-import { Btn, Card, Badge, Modal, Field, PageHeader, TableWrap, ToastProvider, ConfirmModal, DataGrid } from "../components/ui";
+import { Btn, Card, Badge, Modal, Field, PageHeader, TableWrap, ToastProvider, ConfirmModal, DataGrid, Dropdown } from "../components/ui";
 import { callAPI } from "../utils/callserver";
+import GroupMaster from "./GroupMaster";
 
 export default function AccountMaster() {
 
   const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({ name: "", type: "customer", city: "", contact_no: "", gst: "", opening: 0 });
+  const [form, setForm] = useState({ name: "", group: 1, city: "", contact_no: "", gst: "", opening: 0 });
   const [edit, setEdit] = useState(null);
-  const [focusedData ,setfocusedData] = useState({});
+  const [focusedData, setfocusedData] = useState({});
   const [total, setTotal] = useState(0);
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [toasts, setToasts] = useState({ open: false, msg: null, type: null });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmMsg] = useState("Are You Sure You want to Delete this Account?");
+  const loadModelref = useRef({});
+  const [groupData, setGroupData] = useState({});
+  const groupRef = useRef(null); // ✅ ref to call GroupMaster methods
 
-  // Fetch data on component mount
-  useEffect(() => {
-    fetchAccounts();
-  }, []);
+  // ✅ Called by GroupMaster after any add/edit/delete → re-fetch dropdown
+  const handleGroupSaved = async () => {
+    const res = await callAPI("groups", "GET");
+    if (res.success) setGroupData(res?.data ?? []);
+  };
+
 
   const show = (msg, type = "success") => {
     setToasts({ open: true, msg: msg, type: type });
@@ -30,10 +36,17 @@ export default function AccountMaster() {
   };
 
   // Fetch accounts from API
-  const fetchAccounts = async () => {
+  const fetchAccounts = async (loadModel) => {
     try {
+      loadModelref.current = loadModel
+      //console.log(loadModel);
+      let url = "customers";
+      url += `?page=${loadModel.page}`;
+      url += `&limit=${loadModel.pageSize}`;
+      url += loadModel.search ? `&search=${loadModel.search}` : "";
+      //console.log(url);
       setLoading(true);
-      const res = await callAPI("customers", "GET");
+      const res = await callAPI(url, "GET");
       if (res.success) {
         setList(res?.data ?? []);
         setTotal(res?.pagination?.total ?? 0)
@@ -46,11 +59,14 @@ export default function AccountMaster() {
   };
 
   // Open modal for add/edit
-  const open = (a) => {
+  const open = async (a) => {
+    const res = await callAPI("groups", "GET");
+    if (res.success)
+      setGroupData(res?.data ?? []);
     if (a) {
       setForm({
         name: a.name || "",
-        type: a.type || "customer",
+        group: a.group || 1,
         city: a.city || "",
         contact_no: a.contact_no || "",
         gst: a.gstin || "",
@@ -58,7 +74,7 @@ export default function AccountMaster() {
       });
       setEdit(a.id);
     } else {
-      setForm({ name: "", type: "customer", city: "", contact_no: "", gst: "", opening: 0 });
+      setForm({ name: "", group: 1, city: "", contact_no: "", gst: "", opening: 0 });
       setEdit(null);
     }
     setModal(true);
@@ -76,7 +92,7 @@ export default function AccountMaster() {
       contact_no: form.contact_no,
       city: form.city,
       gstin: form.gst,
-      group: 1,
+      group: form.group,
       address: form.city || "N/A",
       opening: Number(form.opening) || 0,
       credit: 0,
@@ -90,23 +106,19 @@ export default function AccountMaster() {
       let res;
       if (edit) {
         // Update existing account
-        res = await callAPI(`customers/${edit}`, "PUT", model);
+        res = await callAPI(`pro/${edit}`, "PUT", model);
         console.log("Update response:", res);
       } else {
         // Create new account
         res = await callAPI("customers", "POST", model);
         console.log("Create response:", res);
       }
-
+      show(res.message, res.success ? "success" : "error" );
       if (res.success) {
         setModal(false);
-        show(res.message);
-        await fetchAccounts(); // Refresh the grid
-      } else {
-        show(`Failed to ${edit ? 'update' : 'create'} account`, "error");
-      }
+        await fetchAccounts(loadModelref.current); // Refresh the grid
+      } 
     } catch (err) {
-      console.error(`Error ${edit ? 'updating' : 'creating'} account:`, err);
       show(`Error ${edit ? 'updating' : 'creating'} account`, "error");
     } finally {
       setLoading(false);
@@ -116,23 +128,18 @@ export default function AccountMaster() {
   // Delete account
   const deleteAccount = async (confirm, data) => {
     setfocusedData(data);
-    console.log(data);
     if (!confirm)
       setConfirmOpen(true)//"Are you sure you want to delete this account?");
     else {
       try {
         setLoading(true);
         const res = await callAPI(`customers/${focusedData.id}`, "DELETE");
-        console.log("Delete response:", res);
 
+        show(res.message, res.success ? "success" : "error" );
         if (res.success) {
-          show(res.message);
-          await fetchAccounts(); // Refresh the grid
-        } else {
-          show("Failed to delete account", "error");
-        }
+          await fetchAccounts(loadModelref.current); // Refresh the grid
+        } 
       } catch (err) {
-        console.error("Error deleting account:", err);
         show("Error deleting account", "error");
       } finally {
         setLoading(false);
@@ -152,75 +159,6 @@ export default function AccountMaster() {
 
 
       <Card noPad>
-        {/* <TableWrap>
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>City</th>
-                <th>Contact No</th>
-                <th>GST No.</th>
-                <th>Opening Balance</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan="7" style={{ textAlign: "center", padding: 20 }}>
-                    Loading...
-                  </td>
-                </tr>
-              ) : filteredList.length === 0 ? (
-                <tr>
-                  <td colSpan="7" style={{ textAlign: "center", padding: 20, color: C.muted }}>
-                    No accounts found
-                  </td>
-                </tr>
-              ) : (
-                filteredList.map(a => (
-                  <tr key={a.id}>
-                    <td style={{ fontWeight: 600, color: C.text }}>{a.name}</td>
-                    <td><Badge color={a.type === "customer" ? C.green : C.blue}>{a.type}</Badge></td>
-                    <td style={{ color: C.muted }}>{a.city || "—"}</td>
-                    <td style={{ color: C.muted }}>{a.contact_no || "—"}</td>
-                    <td><span className="mono" style={{ fontSize: 12, color: C.muted }}>{a.gstin || "—"}</span></td>
-                    <td style={{ fontWeight: 600, color: C.text }}>{fmt(a.opening)}</td>
-                    <td>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <Btn small variant="ghost" onClick={() => open(a)}>Edit</Btn>
-                        <Btn small danger onClick={() => deleteAccount(false ,a.id)}>Delete</Btn>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </TableWrap>  */}
-        {/* <DataGrid
-          columns={[
-            { key: "name", label: "Name" , render :(value,row)=>{ console.log(value , row);
-              return <span  style={{ fontWeight: 600, color: C.text }}>{value}</span>}},
-            { key: "type", label: "Type" },
-            { key: "city", label: "City" },
-            { key: "gstin", label: "GST No." },
-            { key: "contact_no", label: "Contact No" },
-            { key: "opening", label: "Opening Balance" },
-      
-          ]}
-          data={list}
-          total = {total}
-          pageSize={15}
-          onSelectionChange={(rows) => console.log(rows)}
-          headerActions={<div><Btn onClick={() => open(null)}>+ Add Account</Btn></div>}
-          footerActions={<div style={{ display: "flex", gap: 8 }}>
-                        <Btn small variant="ghost" onClick={() => open(a)}>Edit</Btn>
-                        <Btn small danger onClick={() => deleteAccount(false ,a.id)}>Delete</Btn>
-                      </div>}
-        /> */}
-
         <DataGrid
           title=""
           columns={[
@@ -229,7 +167,7 @@ export default function AccountMaster() {
                 return <span style={{ fontWeight: 600, color: C.text }}>{value}</span>
               }
             },
-            { key: "type", label: "Type" },
+            { key: "group_name", label: "Group" },
             { key: "city", label: "City" },
             { key: "gstin", label: "GST No." },
             { key: "contact_no", label: "Contact No" },
@@ -237,25 +175,24 @@ export default function AccountMaster() {
 
           ]}
           data={list}          // each item must have an `id` field
-          pageSize={15}
-          lazy= {true}
+          lazy={true}
           total={total}
-          selectable = {true}
-          onFetch= {()=>{console.log("fetchcalled"); fetchAccounts();}}
-          HeaderButtons = {[
-             {
-              key: "Add", label: "Add Account", icon: "+",variant:"primary",hotkey: "ctrl+a",
-              onClick: (ids, all,focused) => open(null)
+          // selectable={true}
+          onFetch={(loadModel) => { fetchAccounts(loadModel); }}
+          HeaderButtons={[
+            {
+              key: "Add", label: "Add Account", icon: "+", variant: "primary", hotkey: "ctrl+a",
+              onClick: (ids, all, focused) => open(null)
             },
           ]}
           footerButtons={[
             {
-              key: "edit", label: "Edit", icon: "⬇",hotkey: "ctrl+e",
-              onClick: (ids, all,focused) => open(focused)
+              key: "edit", label: "Edit", icon: "⬇", hotkey: "ctrl+e",
+              onClick: (ids, all, focused) => open(focused)
             },
             {
-              key: "del", label: "Delete", icon: "🗑", variant: "danger", hotkey: "ctrl+d", 
-              onClick: (ids, all,focused) => deleteAccount(false , focused)
+              key: "del", label: "Delete", icon: "🗑", variant: "danger", hotkey: "ctrl+d",
+              onClick: (ids, all, focused) => deleteAccount(false, focused)
             },
           ]} />
       </Card>
@@ -265,11 +202,34 @@ export default function AccountMaster() {
           <input autoFocus value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
         </Field>
         <div className="form-grid-2">
-          <Field label="Type">
-            <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
-              <option value="customer">Customer</option>
-              <option value="supplier">Supplier</option>
-            </select>
+          <Field label="Group">
+            <Dropdown
+              value={form.group}
+              onChange={(v, opt) => { setForm({ ...form, group: v }) }}
+              clearable
+              options={groupData}
+              footerButtons={[
+                // ✅ These now call GroupMaster methods via ref
+                {
+                  icon: "+", label: "Add", hotkey: "ctrl+a",
+                  onClick: () => groupRef.current?.openAdd()
+                },
+                {
+                  icon: "⬇", label: "Edit", hotkey: "ctrl+e",
+                  onClick: (idx, focused) => {
+                    if (!focused) return;
+                    groupRef.current?.openEdit(focused);
+                  }
+                },
+                {
+                  icon: "🗑", label: "Delete", hotkey: "ctrl+d",
+                  onClick: (idx, focused) => {
+                    if (!focused) return;
+                    groupRef.current?.openDelete(focused);
+                  }
+                },
+              ]}
+            />
           </Field>
           <Field label="City">
             <input value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} />
@@ -291,6 +251,11 @@ export default function AccountMaster() {
           </Btn>
         </div>
       </Modal>
+
+
+      {/* ✅ Render GroupMaster anywhere — it only renders modals, no visible UI */}
+      <GroupMaster ref={groupRef} onSaved={handleGroupSaved} />
+
 
       <ToastProvider open={toasts.open} msg={toasts.msg} type={toasts.type} >
       </ToastProvider>

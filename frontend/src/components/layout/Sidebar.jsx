@@ -4,7 +4,7 @@ const NAV = [
   { id: "dashboard",   label: "Dashboard",         icon: "⊞", roles: [1, 2] },
   { section: "Masters",                                        roles: [1, 2] },
   { id: "accounts",    label: "Account Master",    icon: "◉", roles: [1, 2]  },
-  { id: "categories",  label: "Category Master",   icon: "▤", roles: [1, 2]  },
+  // { id: "categories",  label: "Category Master",   icon: "▤", roles: [1, 2]  },
   { id: "products",    label: "Product Master",    icon: "⬡", roles: [1, 2]  },
   { id: "barcode",     label: "Barcode Generator", icon: "▦", roles: [1, 2]  },
   { section: "Transactions",                                   roles: [1, 2]  },
