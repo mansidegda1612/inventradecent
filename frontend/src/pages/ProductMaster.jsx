@@ -1,4 +1,4 @@
-import { useState, useEffect,useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { C } from "../utils/theme";
 import { fmt } from "../utils/format";
 import { Btn, Card, Badge, Modal, Field, PageHeader, TableWrap, DataGrid, Dropdown, ToastProvider, ConfirmModal } from "../components/ui";
@@ -17,10 +17,10 @@ export default function ProductMaster({ products, setProducts, categories }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmMsg] = useState("Are You Sure You want to Delete this Product?");
   const loadModelref = useRef({});
-  const categoryRef = useRef(null); 
+  const categoryRef = useRef(null);
   const [focusedData, setfocusedData] = useState({});
 
-    // ✅ Called by category master after any add/edit/delete → re-fetch dropdown
+  // ✅ Called by category master after any add/edit/delete → re-fetch dropdown
   const handleCategorySaved = async () => {
     const res = await callAPI("categories", "GET");
     if (res.success) setCategoryData(res?.data ?? []);
@@ -29,7 +29,7 @@ export default function ProductMaster({ products, setProducts, categories }) {
 
   const genBarcode = () => "BAR" + String(Date.now()).slice(-6);
 
-  
+
 
   const show = (msg, type = "success") => {
     setToasts({ open: true, msg: msg, type: type });
@@ -40,7 +40,7 @@ export default function ProductMaster({ products, setProducts, categories }) {
 
   // Fetch accounts from API
   const fetchProduct = async (loadModel) => {
-     try {
+    try {
       loadModelref.current = loadModel
       //console.log(loadModel);
       let url = "products";
@@ -69,7 +69,11 @@ export default function ProductMaster({ products, setProducts, categories }) {
       setForm({ ...p });
       setEdit(p.id);
     } else {
-      setForm({ name: "", category: 0, barcode: "", gstPer: 18, sale_rate: 0, purc_rate: 0, o_qty: 0 });
+      const barcoderes = await await callAPI("products/generate-barcode", "GET");
+      let barcode = "";
+      if (barcoderes.success)
+        barcode = barcoderes.data.barcode;
+      setForm({ name: "", category: 0, barcode: barcode, gstPer: 5, sale_rate: 0, purc_rate: 0, o_qty: 0 });
       setEdit(null);
     }
     setModal(true);
@@ -92,6 +96,7 @@ export default function ProductMaster({ products, setProducts, categories }) {
       sale_rate: form.sale_rate,
       hsn_code: form.hsn_code,
       barcode: form.barcode,
+      gstPer: form.gstPer,
       o_qty: form.o_qty
     }
 
@@ -107,11 +112,11 @@ export default function ProductMaster({ products, setProducts, categories }) {
         // Create new product
         res = await callAPI("products", "POST", model);
       }
-      show(res.message, res.success ? "success" : "error" );
+      show(res.message, res.success ? "success" : "error");
       if (res.success) {
         setModal(false);
         await fetchProduct(loadModelref.current); // Refresh the grid
-      } 
+      }
     } catch (err) {
       show(`Error ${edit ? 'updating' : 'creating'} product`, "error");
     } finally {
@@ -119,7 +124,7 @@ export default function ProductMaster({ products, setProducts, categories }) {
     }
   };
 
-   // Delete account
+  // Delete account
   const deleteProduct = async (confirm, data) => {
     setfocusedData(data);
     console.log(data);
@@ -129,10 +134,10 @@ export default function ProductMaster({ products, setProducts, categories }) {
       try {
         setLoading(true);
         const res = await callAPI(`products/${focusedData.id}`, "DELETE");
-         show(res.message, res.success ? "success" : "error" );
+        show(res.message, res.success ? "success" : "error");
         if (res.success) {
           await fetchProduct(loadModelref.current); // Refresh the grid
-        } 
+        }
       } catch (err) {
         show("Error deleting Product", "error");
       } finally {
@@ -160,9 +165,11 @@ export default function ProductMaster({ products, setProducts, categories }) {
             },
             { key: "category_name", label: "Category" },
             { key: "barcode", label: "Barcode" },
-            { key: "gstPer", label: "GST%" , render: (value, row) => {
-                return <span>{value + "%" }</span>;
-              },},
+            {
+              key: "gstPer", label: "GST%", render: (value, row) => {
+                return <span>{value + "%"}</span>;
+              },
+            },
             { key: "sale_rate", label: "sale Rate" },
             { key: "purc_rate", label: "purc Rate" },
             { key: "o_qty", label: "Opening Qty" },
@@ -172,7 +179,7 @@ export default function ProductMaster({ products, setProducts, categories }) {
           lazy={true}
           total={total}
           // selectable={true}
-           onFetch={(loadModel) => { fetchProduct(loadModel); }}
+          onFetch={(loadModel) => { fetchProduct(loadModel); }}
           HeaderButtons={[
             {
               key: "Add",
@@ -276,7 +283,7 @@ export default function ProductMaster({ products, setProducts, categories }) {
         </div>
       </Modal>
 
-      <CategoryMaster ref={categoryRef} onSaved={handleCategorySaved} /> 
+      <CategoryMaster ref={categoryRef} onSaved={handleCategorySaved} />
 
 
       <ToastProvider open={toasts.open} msg={toasts.msg} type={toasts.type} >

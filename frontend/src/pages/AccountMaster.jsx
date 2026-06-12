@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { C } from "../utils/theme";
 import { fmt } from "../utils/format";
-import { Btn, Card, Badge, Modal, Field, PageHeader, TableWrap, ToastProvider, ConfirmModal, DataGrid, Dropdown } from "../components/ui";
+import { Btn, Card, Badge, Modal, Field, PageHeader, TableWrap, ToastProvider, ConfirmModal, DataGrid, Dropdown ,BalancePill } from "../components/ui";
 import { callAPI } from "../utils/callserver";
 import GroupMaster from "./GroupMaster";
 
@@ -70,11 +70,12 @@ export default function AccountMaster() {
         city: a.city || "",
         contact_no: a.contact_no || "",
         gst: a.gstin || "",
-        opening: a.opening || 0
+        opening: Math.abs(a.opening) || 0,
+        RecPay : a.opening < 0 ? "D" : "C" 
       });
       setEdit(a.id);
     } else {
-      setForm({ name: "", group: 1, city: "", contact_no: "", gst: "", opening: 0 });
+      setForm({ name: "", group: 1, city: "", contact_no: "", gst: "", opening: 0  ,RecPay : "C" });
       setEdit(null);
     }
     setModal(true);
@@ -94,10 +95,7 @@ export default function AccountMaster() {
       gstin: form.gst,
       group: form.group,
       address: form.city || "N/A",
-      opening: Number(form.opening) || 0,
-      credit: 0,
-      debit: 0,
-      closing: Number(form.opening) || 0
+      opening: Number(form.RecPay == "D" ? (form.opening )*(-1) :  form.opening) || 0,
     };
 
     try {
@@ -106,18 +104,18 @@ export default function AccountMaster() {
       let res;
       if (edit) {
         // Update existing account
-        res = await callAPI(`pro/${edit}`, "PUT", model);
+        res = await callAPI(`customers/${edit}`, "PUT", model);
         console.log("Update response:", res);
       } else {
         // Create new account
         res = await callAPI("customers", "POST", model);
         console.log("Create response:", res);
       }
-      show(res.message, res.success ? "success" : "error" );
+      show(res.message, res.success ? "success" : "error");
       if (res.success) {
         setModal(false);
         await fetchAccounts(loadModelref.current); // Refresh the grid
-      } 
+      }
     } catch (err) {
       show(`Error ${edit ? 'updating' : 'creating'} account`, "error");
     } finally {
@@ -135,10 +133,10 @@ export default function AccountMaster() {
         setLoading(true);
         const res = await callAPI(`customers/${focusedData.id}`, "DELETE");
 
-        show(res.message, res.success ? "success" : "error" );
+        show(res.message, res.success ? "success" : "error");
         if (res.success) {
           await fetchAccounts(loadModelref.current); // Refresh the grid
-        } 
+        }
       } catch (err) {
         show("Error deleting account", "error");
       } finally {
@@ -171,7 +169,7 @@ export default function AccountMaster() {
             { key: "city", label: "City" },
             { key: "gstin", label: "GST No." },
             { key: "contact_no", label: "Contact No" },
-            { key: "opening", label: "Opening Balance" },
+            { key: "opening", label: "Opening Balance",  render: v => <BalancePill value={v} />,},
 
           ]}
           data={list}          // each item must have an `id` field
@@ -236,14 +234,32 @@ export default function AccountMaster() {
           </Field>
         </div>
         <Field label="Contact Number">
-          <input value={form.contact_no} onChange={e => setForm({ ...form, contact_no: e.target.value })} />
+          <input value={form.contact_no} onChange={e => setForm({ ...form, contact_no: e.target.value })}
+            onKeyDown={(e) => {
+              const allowed = ["Backspace", "Delete", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Tab", "Enter"];
+              if (allowed.includes(e.key)) return;
+              if (e.key === "-") { e.preventDefault(); return; }
+              // count only digit characters (ignore existing decimal point)
+              const digits = e.target.value.replace(/[^0-9]/g, "");
+              if (digits.length >= 10) e.preventDefault();
+            }
+            } />
         </Field>
         <Field label="GST Number">
           <input value={form.gst} onChange={e => setForm({ ...form, gst: e.target.value })} placeholder="e.g. 24AAJCM3827R1ZW" />
         </Field>
+          <div className="form-grid-2">
         <Field label="Opening Balance (₹)">
           <input type="number" value={form.opening} onChange={e => setForm({ ...form, opening: e.target.value })} />
         </Field>
+        <Field label="Rec/Pay">
+           <Dropdown
+              value={form.RecPay}
+              onChange={(v, opt) => { setForm({ ...form, RecPay: v }) }}
+              options={[{ id: 'C', name: "Receivable" }, { id: 'D', name: "Payable" }]}
+            />
+        </Field>
+        </div>
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <Btn variant="ghost" onClick={() => setModal(false)}>Cancel</Btn>
           <Btn onClick={save} disabled={loading}>

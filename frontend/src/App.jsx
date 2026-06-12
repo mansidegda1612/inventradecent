@@ -1,5 +1,6 @@
 import { useState } from "react";
 import "./style/global.css";
+// import "./style/transaction.css";
 
 // Layout
 import Sidebar from "./components/layout/Sidebar";
@@ -69,9 +70,8 @@ export default function App() {
     dashboard:     <Dashboard        products={products} sales={sales} purchases={purchases} accounts={accounts} />,
     users:         <UserManagement   users={users} setUsers={setUsers} />,
     accounts:      <AccountMaster />,
-    // categories:    <CategoryMaster   categories={categories} setCategories={setCategories} products={products} />,
     products:      <ProductMaster />,
-    barcode:       <BarcodeGenerator products={products} />,
+    barcode:       <BarcodeGenerator/>,
     purchase:      <PurchaseEntry    purchases={purchases} setPurchases={setPurchases} products={products} setProducts={setProducts} accounts={accounts} />,
     sale:          <SaleEntry        sales={sales} setSales={setSales} products={products} setProducts={setProducts} accounts={accounts} />,
     "inv-reports": <InventoryReports products={products} categories={categories} sales={sales} purchases={purchases} />,

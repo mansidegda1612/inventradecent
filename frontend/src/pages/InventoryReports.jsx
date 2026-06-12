@@ -1,126 +1,340 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { C } from "../utils/theme";
-import { fmt } from "../utils/format";
-import { Btn, Card, Badge, PageHeader, DateFilter, TableWrap } from "../components/ui";
+import { fmt, fmtDateISO } from "../utils/format";
+import { callAPI } from "../utils/callserver";
+import {
+  Btn, Badge, PageHeader, DateFilter, Spinner, DataGrid,
+} from "../components/ui";
 
+// ─── helpers ──────────────────────────────────────────────────────────────────
 function defaultFrom() {
-  return new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
+  const now = new Date();
+  return fmtDateISO(new Date(now.getFullYear(), 0, 1));
 }
 function defaultTo() {
-  return new Date().toISOString().slice(0, 10);
+  return fmtDateISO(new Date());
 }
 
-export default function InventoryReports({ products, categories, sales, purchases }) {
-  const [tab, setTab]   = useState("stock");
+// ─── small stock-status badge ─────────────────────────────────────────────────
+function StockBadge({ qty }) {
+  const qty_n = Number(qty) || 0;
+  if (qty_n <= 0) return <Badge color={C.red}>Out of Stock</Badge>;
+  if (qty_n < 10) return <Badge color={C.amber}>Low Stock</Badge>;
+  return <Badge color={C.green}>In Stock</Badge>;
+}
+
+// ─── stat chip (used in DataGrid footerExtra) ─────────────────────────────────
+function StatChip({ label, value, color = C.accent }) {
+  return (
+    <div style={{
+      display: "inline-flex", alignItems: "center", gap: 8,
+      background: C.card, border: `1.5px solid ${C.border}`,
+      borderRadius: 10, padding: "6px 14px",
+      boxShadow: "0 1px 4px #00000008",
+    }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".07em" }}>
+        {label}
+      </span>
+      <span style={{
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 13, fontWeight: 700, color,
+      }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN COMPONENT
+// ─────────────────────────────────────────────────────────────────────────────
+export default function InventoryReports() {
+  const [tab, setTab] = useState("stock");
   const [from, setFrom] = useState(defaultFrom);
-  const [to, setTo]     = useState(defaultTo);
+  const [to, setTo] = useState(defaultTo);
 
-  // Filter sales & purchases by date range
-  const filteredSales     = sales.filter(s => s.date >= from && s.date <= to);
-  const filteredPurchases = purchases.filter(p => p.date >= from && p.date <= to);
+  const [stockData, setStockData] = useState([]);
+  const [movementData, setMovementData] = useState([]);
+  const [lowData, setLowData] = useState([]);
+  const [summary, setSummary] = useState(null);   // { totalStockValue, lowCount, outCount }
 
-  const stockMovement = products.map(p => {
-    const sold   = filteredSales.flatMap(s => s.items).filter(i => i.productId === p.id).reduce((a, b) => a + b.qty, 0);
-    const bought = filteredPurchases.flatMap(s => s.items).filter(i => i.productId === p.id).reduce((a, b) => a + b.qty, 0);
-    return { ...p, sold, bought };
-  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  const totalStockValue = products.reduce((a, p) => a + p.qty * p.rate, 0);
+  // ── load data whenever tab / date range changes ───────────────────────────
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      if (tab === "stock") {
+        const data = await callAPI("reports/inventory/current-stock", "GET");
+        setStockData((data?.rows || []).map((r, i) => ({ ...r, id: r.id ?? i })));
+        setSummary(data?.summary || null);
 
+      } else if (tab === "movement") {
+        const data = await callAPI(
+          `reports/inventory/stock-movement?from=${from}&to=${to}`, "GET"
+        );
+        setMovementData((data?.rows || []).map((r, i) => ({ ...r, id: r.id ?? i })));
+
+      } else if (tab === "low") {
+        const data = await callAPI("reports/inventory/low-stock", "GET");
+        setLowData((data?.rows || []).map((r, i) => ({ ...r, id: r.id ?? i })));
+        setSummary(data?.summary || null);
+      }
+    } catch (e) {
+      setError(e.message || "Failed to load data");
+    } finally {
+      setLoading(false);
+    }
+  }, [tab, from, to]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // ── TABS config ───────────────────────────────────────────────────────────
+  const TABS = [
+    { key: "stock", label: "📦 Current Stock" },
+    { key: "movement", label: "🔄 Stock Movement" },
+    { key: "low", label: "⚠️ Low Stock" },
+  ];
+
+  // ── Current Stock columns ─────────────────────────────────────────────────
+  const stockCols = [
+    {
+      key: "name", label: "Product",
+      render: v => <span style={{ fontWeight: 600, color: C.text }}>{v}</span>,
+    },
+    {
+      key: "category", label: "Category",
+      render: v => <Badge color={C.blue}>{v || "—"}</Badge>,
+    },
+    {
+      key: "barcode", label: "Barcode",
+      render: v => (
+        <span style={{ fontSize: 12, color: C.accent, fontWeight: 600 }}>
+          {v || "—"}
+        </span>
+      ),
+    },
+    {
+      key: "purc_rate", label: "Purchase Rate",
+      render: v => <span>{fmt(v)}</span>,
+    },
+    {
+      key: "sale_rate", label: "Sale Rate",
+      render: v => <span >{fmt(v)}</span>,
+    },
+    {
+      key: "c_qty", label: "Current Qty",
+      render: v => (
+        <span style={{
+          fontWeight: 700,
+          color: Number(v) <= 0 ? C.red : Number(v) < 10 ? C.amber : C.green,
+        }}>
+          {v}
+        </span>
+      ),
+    },
+    // {
+    //   key: "stock_value", label: "Stock Value",
+    //   render: v => <span style={{ fontWeight: 700, color: C.green}}>{fmt(v)}</span>,
+    // },
+    {
+      key: "status", label: "Status", sortable: false,
+      render: (_, row) => <StockBadge qty={row.c_qty} />,
+    },
+  ];
+
+  // ── Stock Movement columns ────────────────────────────────────────────────
+  const movementCols = [
+    {
+      key: "name", label: "Product",
+      render: v => <span style={{ fontWeight: 600, color: C.text }}>{v}</span>,
+    },
+    {
+      key: "category", label: "Category",
+      render: v => <Badge color={C.blue}>{v || "—"}</Badge>,
+    },
+    {
+      key: "o_qty", label: "Opening",
+      render: v => <span style={{ color: C.muted }}>{v ?? 0}</span>,
+    },
+    {
+      key: "purchased", label: "Purchased",
+      render: v => (
+        <span style={{ color: C.blue, fontWeight: 600 }}>
+          {Number(v) > 0 ? `+${v}` : v ?? 0}
+        </span>
+      ),
+    },
+    {
+      key: "sold", label: "Sold",
+      render: v => (
+        <span style={{ color: C.red, fontWeight: 600 }}>
+          {Number(v) > 0 ? `−${v}` : v ?? 0}
+        </span>
+      ),
+    },
+    {
+      key: "c_qty", label: "Closing Qty",
+      render: v => <span style={{ fontWeight: 600, color: C.text }}>{v}</span>,
+    },
+  ];
+
+  // ── Low Stock columns ─────────────────────────────────────────────────────
+  const lowCols = [
+    {
+      key: "name", label: "Product",
+      render: v => <span style={{ fontWeight: 600, color: C.text }}>{v}</span>,
+    },
+    {
+      key: "category", label: "Category",
+      render: v => <Badge color={C.blue}>{v || "—"}</Badge>,
+    },
+    {
+      key: "barcode", label: "Barcode",
+      render: v => (
+        <span style={{ fontSize: 12, color: C.accent, fontWeight: 600 }}>
+          {v || "—"}
+        </span>
+      ),
+    },
+    {
+      key: "c_qty", label: "Current Qty",
+      render: v => (
+        <span style={{
+          fontWeight: 700,
+          color: Number(v) <= 0 ? C.red : C.amber,
+        }}>
+          {v}
+        </span>
+      ),
+    },
+    {
+      key: "status", label: "Status", sortable: false,
+      render: (_, row) => <StockBadge qty={row.c_qty} />,
+    },
+  ];
+
+  // ── render ────────────────────────────────────────────────────────────────
   return (
     <div>
-      <PageHeader title="Inventory Reports" sub="Real-time stock tracking and movement analysis." />
-
-      {/* Date filter */}
-      <DateFilter
-        from={from} to={to} setFrom={setFrom} setTo={setTo}
-        totalLabel="Stock Value"
-        totalValue={fmt(totalStockValue)}
+      <PageHeader
+        title="Inventory Reports"
+        sub="Real-time stock tracking and movement analysis."
       />
 
-      {/* Tab switcher */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        {[["stock", "Current Stock"], ["low", "Low Stock"], ["movement", "Stock Movement"]].map(([id, label]) => (
-          <Btn key={id} small variant={tab === id ? "primary" : "ghost"} onClick={() => setTab(id)}>{label}</Btn>
+      {/* Date filter — only relevant for movement tab */}
+      <DateFilter
+        from={from} to={to} setFrom={setFrom} setTo={setTo}
+      />
+
+      {/* Tab bar */}
+      <div style={{
+        display: "flex", gap: 6, marginBottom: 16,
+        padding: "4px", background: C.card,
+        border: `1px solid ${C.border}`, borderRadius: 10,
+        width: "fit-content", boxShadow: "0 1px 4px #00000008",
+      }}>
+        {TABS.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            style={{
+              padding: "7px 16px", border: "none",
+              borderRadius: 7, fontFamily: "inherit",
+              fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+              transition: "all .15s",
+              background: tab === t.key ? C.accent : "transparent",
+              color: tab === t.key ? "#fff" : C.muted,
+              boxShadow: tab === t.key ? `0 2px 8px ${C.accent}44` : "none",
+            }}
+          >{t.label}</button>
         ))}
       </div>
 
-      {/* CURRENT STOCK */}
+      {/* Error banner */}
+      {error && (
+        <div style={{
+          background: C.redBg, border: `1px solid ${C.red}33`,
+          color: C.red, borderRadius: 10, padding: "10px 16px",
+          marginBottom: 14, fontSize: 13, fontWeight: 600,
+        }}>
+          ⚠️ {error}
+        </div>
+      )}
+
+      {/* ── CURRENT STOCK TAB ──────────────────────────────────────────────── */}
       {tab === "stock" && (
-        <Card noPad>
-          <TableWrap>
-            <table>
-              <thead>
-                <tr><th>Product</th><th>Category</th><th>Barcode</th><th>Rate</th><th>Qty</th><th>Stock Value</th></tr>
-              </thead>
-              <tbody>
-                {products.map(p => {
-                  const cat = categories.find(c => c.id === p.categoryId);
-                  return (
-                    <tr key={p.id}>
-                      <td style={{ fontWeight: 600, color: C.text }}>{p.name}</td>
-                      <td><Badge color={C.blue}>{cat?.name}</Badge></td>
-                      <td><span className="mono" style={{ fontSize: 12, color: C.accent }}>{p.barcode}</span></td>
-                      <td>{fmt(p.rate)}</td>
-                      <td><Badge color={p.qty === 0 ? C.red : p.qty < 10 ? C.amber : C.green}>{p.qty}</Badge></td>
-                      <td style={{ fontWeight: 700, color: C.green }}>{fmt(p.qty * p.rate)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </TableWrap>
-          <div style={{ textAlign: "right", padding: "12px 20px", borderTop: `1px solid ${C.border}`, fontWeight: 700 }}>
-            Total: <span style={{ color: C.green }}>{fmt(totalStockValue)}</span>
-          </div>
-        </Card>
+        <>
+          {loading && <div style={{ padding: 40, textAlign: "center" }}><Spinner size={28} /></div>}
+          {!loading && (
+            <DataGrid
+              title="Current Stock"
+              pageSize={8}
+              columns={stockCols}
+              data={stockData}
+              emptyText="No products found"
+              HeaderButtons={[
+                { key: "refresh", label: "↺ Refresh", icon: "", variant: "", onClick: loadData },
+              ]}
+              footerExtra={
+                summary && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <StatChip label="Low Stock Items" value={summary.lowCount} color={C.amber} />
+                    <StatChip label="Out of Stock" value={summary.outCount} color={C.red} />
+                  </div>
+                )
+              }
+            />
+          )}
+        </>
       )}
 
-      {/* LOW STOCK */}
-      {tab === "low" && (
-        <Card noPad>
-          {products.filter(p => p.qty < 20).length === 0
-            ? <div style={{ padding: 20 }}><p style={{ color: C.green, fontWeight: 600 }}>✓ All products are well-stocked.</p></div>
-            : (
-              <TableWrap>
-                <table>
-                  <thead><tr><th>Product</th><th>Qty Available</th><th>Rate</th><th>Status</th></tr></thead>
-                  <tbody>
-                    {products.filter(p => p.qty < 20).map(p => (
-                      <tr key={p.id}>
-                        <td style={{ fontWeight: 600, color: C.text }}>{p.name}</td>
-                        <td>{p.qty}</td>
-                        <td>{fmt(p.rate)}</td>
-                        <td><Badge color={p.qty === 0 ? C.red : C.amber}>{p.qty === 0 ? "Out of Stock" : "Low Stock"}</Badge></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </TableWrap>
-            )}
-        </Card>
-      )}
-
-      {/* STOCK MOVEMENT */}
+      {/* ── STOCK MOVEMENT TAB ────────────────────────────────────────────── */}
       {tab === "movement" && (
-        <Card noPad>
-          <TableWrap>
-            <table>
-              <thead><tr><th>Product</th><th>Opening</th><th>Purchased</th><th>Sold</th><th>Current</th></tr></thead>
-              <tbody>
-                {stockMovement.map(p => (
-                  <tr key={p.id}>
-                    <td style={{ fontWeight: 600, color: C.text }}>{p.name}</td>
-                    <td style={{ color: C.muted }}>{p.qty - p.bought + p.sold}</td>
-                    <td style={{ color: C.blue, fontWeight: 600 }}>+{p.bought}</td>
-                    <td style={{ color: C.red, fontWeight: 600 }}>-{p.sold}</td>
-                    <td><Badge color={p.qty === 0 ? C.red : C.green}>{p.qty}</Badge></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableWrap>
-        </Card>
+        <>
+          {loading && <div style={{ padding: 40, textAlign: "center" }}><Spinner size={28} /></div>}
+          {!loading && (
+            <DataGrid
+              title="Stock Movement"
+              pageSize={8}
+              columns={movementCols}
+              data={movementData}
+              emptyText="No movement data found for the selected period"
+              HeaderButtons={[
+                { key: "refresh", label: "↺ Refresh", icon: "", variant: "", onClick: loadData },
+              ]}
+            />
+          )}
+        </>
+      )}
+
+      {/* ── LOW STOCK TAB ─────────────────────────────────────────────────── */}
+      {tab === "low" && (
+        <>
+          {loading && <div style={{ padding: 40, textAlign: "center" }}><Spinner size={28} /></div>}
+          {!loading && (
+            <DataGrid
+              title="Low Stock Alert"
+              columns={lowCols}
+              pageSize={8}
+              data={lowData}
+              emptyText="✓ All products are well-stocked"
+              HeaderButtons={[
+                { key: "refresh", label: "↺ Refresh", icon: "", variant: "", onClick: loadData },
+              ]}
+              footerExtra={
+                summary && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <StatChip label="Low Stock Items" value={summary.lowCount} color={C.amber} />
+                    <StatChip label="Out of Stock" value={summary.outCount} color={C.red} />
+                  </div>
+                )
+              }
+            />
+          )}
+        </>
       )}
     </div>
   );

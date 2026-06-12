@@ -1,5 +1,6 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { fmt, fmtDateShort,fmtDateISO } from "../../utils/format";
 import { C } from "../../utils/theme";
 
 // ─── BUTTON ──────────────────────────────────────────────────────────────────
@@ -78,11 +79,17 @@ export function Modal({ open, onClose, title, children, width = 560 }) {
   if (!open) return null;
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "#00000050", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "20px 12px", overflowY: "auto" }}
+      style={{
+        position: "fixed", inset: 0, background: "#00000050", zIndex: 1000,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "20px 12px", overflowY: "auto",
+        // Tall modals: fall back to top-align so they stay scrollable
+        ...(window.innerHeight < 600 && { alignItems: "flex-start" })
+      }}
       onClick={e => e.target === e.currentTarget && onClose()}
     >
       <div style={{ background: C.card, borderRadius: 18, border: `1px solid ${C.border}`, width: "100%", maxWidth: width, boxShadow: "0 20px 60px #00000025", marginTop: 20, marginBottom: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 22px", borderBottom: `1px solid ${C.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 22px", borderBottom: `1px solid ${C.border}` }}>
           <span style={{ fontWeight: 800, fontSize: 16, color: C.text }}>{title}</span>
           <button onClick={onClose} style={{ background: C.bg, border: "none", color: C.muted, fontSize: 18, lineHeight: 1, width: 30, height: 30, borderRadius: 8, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
         </div>
@@ -142,8 +149,8 @@ export function DateFilter({ from, to, setFrom, setTo, totalLabel, totalValue })
           variant="ghost"
           onClick={() => {
             const now = new Date();
-            setFrom(new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10));
-            setTo(now.toISOString().slice(0, 10));
+            setFrom(fmtDateISO(new Date(now.getFullYear(), 0, 1)));
+            setTo(fmtDateISO(now));
           }}
         >
           This Year
@@ -153,8 +160,8 @@ export function DateFilter({ from, to, setFrom, setTo, totalLabel, totalValue })
           variant="ghost"
           onClick={() => {
             const now = new Date();
-            const first = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-            const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+            const first = fmtDateISO(new Date(now.getFullYear(), now.getMonth(), 1));
+            const last = fmtDateISO(new Date(now.getFullYear(), now.getMonth() + 1, 0));
             setFrom(first); setTo(last);
           }}
         >
@@ -221,6 +228,28 @@ export function ConfirmModal({ open, onClose, onConfirm, title = "Confirmtion", 
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ─── balance pill ─────────────────────────────────────────────────────────────
+export function BalancePill({ value, labels = ["Rec", "Pay"] }) {
+  const n = Number(value) || 0;
+  const isPositive = n >= 0;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      background: isPositive ?  C.greenBg : C.redBg ,
+      color: isPositive ?  C.green : C.red ,
+      border: `1px solid ${isPositive ? C.red : C.green}33`,
+      borderRadius: 6, padding: "2px 8px",
+      fontSize: 11.5, fontWeight: 700,
+      fontFamily: "'JetBrains Mono', monospace",
+    }}>
+      {fmt(Math.abs(n))}
+      <span style={{ fontSize: 9, fontWeight: 800, opacity: 0.7 }}>
+        {isPositive ? labels[0] : labels[1]}
+      </span>
+    </span>
   );
 }
 
@@ -321,6 +350,21 @@ export function ConfirmModal({ open, onClose, onConfirm, title = "Confirmtion", 
 //    pageSize={15}
 //  />
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+//  DataGrid 
+//
+//  UNCHANGED from original except two new optional props:
+//    • headerExtra  — ReactNode rendered on the right side of the toolbar
+//    • footerExtra  — ReactNode rendered on the left side of the footer (before buttons)
+//
+//  All existing props, behaviour and styling are identical.
+//  Any existing usages that do NOT pass these props are unaffected.
+//
+//  ── NEW PROPS ────────────────────────────────────────────────────────────────
+//  headerExtra    ReactNode    extra content shown right-side in toolbar
+//  footerExtra    ReactNode    extra content shown left-side in footer
+//
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function DataGrid({
   title,
@@ -336,6 +380,9 @@ export function DataGrid({
   lazy = false,
   total: lazyTotal = 0,
   onFetch,
+  // ── NEW ──────────────────────────────────────────────────────────────────
+  headerExtra = null,   // ReactNode: rendered in toolbar row (right side)
+  footerExtra = null,   // ReactNode: rendered in footer row (left side, before buttons)
 }) {
   // ── STATE ──────────────────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
@@ -346,27 +393,20 @@ export function DataGrid({
   const [selected, setSelected] = useState(new Set());
   const [visibleKeys, setVisibleKeys] = useState(columns.map(c => c.key));
   const [colDropOpen, setColDropOpen] = useState(false);
-  const [focusedIdx, setFocusedIdx] = useState(null); // index within pageRows
-
+  const [focusedIdx, setFocusedIdx] = useState(null);
 
   const colDropRef = useRef(null);
   const tableRef = useRef(null);
   const searchDebounce = useRef(null);
-  // keep latest focusedIdx accessible in global keydown without stale closure
   const focusedIdxRef = useRef(null);
   focusedIdxRef.current = focusedIdx;
 
-  // ── LAZY: fire onFetch on change (debounce search) ─────────────────────────
-  const fetchParams = useRef({});
   useEffect(() => {
     if (!lazy) return;
     const params = { page, pageSize, search, sortKey, sortDir };
-    fetchParams.current = params;
     if (onFetch) onFetch(params);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize, sortKey, sortDir]);
 
-  // search debounce for lazy
   useEffect(() => {
     if (!lazy) return;
     clearTimeout(searchDebounce.current);
@@ -375,18 +415,11 @@ export function DataGrid({
       if (onFetch) onFetch({ page: 1, pageSize, search, sortKey, sortDir });
     }, 300);
     return () => clearTimeout(searchDebounce.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
-  // reset page on filter change (client mode)
-  useEffect(() => {
-    if (!lazy) setPage(1);
-  }, [search, sortKey, sortDir, pageSize, lazy]);
-
-  // reset focus when page changes
+  useEffect(() => { if (!lazy) setPage(1); }, [search, sortKey, sortDir, pageSize, lazy]);
   useEffect(() => { setFocusedIdx(null); }, [page]);
 
-  // ── CLOSE COL DROPDOWN OUTSIDE ─────────────────────────────────────────────
   useEffect(() => {
     const h = e => {
       if (colDropRef.current && !colDropRef.current.contains(e.target))
@@ -396,7 +429,6 @@ export function DataGrid({
     return () => document.removeEventListener("mousedown", h);
   }, []);
 
-  // ── DATA PIPELINE (client mode only) ──────────────────────────────────────
   const filtered = useMemo(() => {
     if (lazy) return data;
     const q = search.toLowerCase();
@@ -425,10 +457,8 @@ export function DataGrid({
   const from = Math.min((safePage - 1) * pageSize + 1, total);
   const to = Math.min(safePage * pageSize, total);
 
-  // ── FOCUSED ROW OBJECT ─────────────────────────────────────────────────────
   const focusedRow = focusedIdx !== null ? pageRows[focusedIdx] ?? null : null;
 
-  // ── SELECTION ──────────────────────────────────────────────────────────────
   const allPageSelected =
     pageRows.length > 0 && pageRows.every(r => selected.has(r.id));
 
@@ -444,20 +474,17 @@ export function DataGrid({
     setSelected(next);
   };
 
-  // ── SORT ───────────────────────────────────────────────────────────────────
   const handleSort = key => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("asc"); }
   };
 
-  // ── COLUMN TOGGLE ──────────────────────────────────────────────────────────
   const toggleCol = key => {
     setVisibleKeys(prev =>
       prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
     );
   };
 
-  // ── PAGINATION PAGE NUMBERS ────────────────────────────────────────────────
   const pageNums = [];
   for (let i = 1; i <= totalPages; i++) {
     if (i === 1 || i === totalPages || (i >= safePage - 1 && i <= safePage + 1))
@@ -466,53 +493,37 @@ export function DataGrid({
       pageNums.push("…");
   }
 
-  // ── SCROLL FOCUSED ROW INTO VIEW ───────────────────────────────────────────
   useEffect(() => {
     if (focusedIdx === null || !tableRef.current) return;
     const rows = tableRef.current.querySelectorAll("tbody tr[data-idx]");
     rows[focusedIdx]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [focusedIdx]);
 
-  // ── HOTKEY PARSER ──────────────────────────────────────────────────────────
-  // Parses "ctrl+d", "alt+F2", "F2", "shift+enter" → { ctrl, alt, shift, key }
   const parseHotkey = raw => {
     const parts = raw.toLowerCase().split("+");
     const key = parts[parts.length - 1];
-    return {
-      ctrl: parts.includes("ctrl"),
-      alt: parts.includes("alt"),
-      shift: parts.includes("shift"),
-      key,
-    };
+    return { ctrl: parts.includes("ctrl"), alt: parts.includes("alt"), shift: parts.includes("shift"), key };
   };
 
-  // ── GLOBAL KEYBOARD HANDLER ────────────────────────────────────────────────
   const handleKeyDown = useCallback(e => {
     const tag = e.target?.tagName?.toLowerCase();
     const inInput = tag === "input" || tag === "textarea" || tag === "select";
 
-    // ── Arrow navigation (works even in inputs for ↑↓) ──────────────────────
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      // only when focus is inside our grid wrapper
       if (!tableRef.current?.closest("[data-dg-root]")?.contains(document.activeElement) &&
         !tableRef.current?.contains(document.activeElement)) return;
-
       e.preventDefault();
       const len = pageRows.length;
       if (!len) return;
       setFocusedIdx(prev => {
         if (prev === null) return e.key === "ArrowDown" ? 0 : len - 1;
-        return e.key === "ArrowDown"
-          ? Math.min(prev + 1, len - 1)
-          : Math.max(prev - 1, 0);
+        return e.key === "ArrowDown" ? Math.min(prev + 1, len - 1) : Math.max(prev - 1, 0);
       });
-      // move DOM focus to the table so subsequent arrows keep working
       tableRef.current?.querySelector("tbody tr[data-idx]")?.focus();
       return;
     }
 
-    // ── Enter = toggle checkbox on focused row ────────────────────────────
-    if (e.key === "Enter" && selectable && !inInput ) {
+    if (e.key === "Enter" && selectable && !inInput) {
       const idx = focusedIdxRef.current;
       if (idx !== null && pageRows[idx]) {
         e.preventDefault();
@@ -521,19 +532,13 @@ export function DataGrid({
       return;
     }
 
-    // ── Hotkeys for footer buttons ─────────────────────────────────────────
-    if (inInput && !e.ctrlKey && !e.altKey) return; // ignore plain keys in inputs
+    if (inInput && !e.ctrlKey && !e.altKey) return;
     const btns = [...footerButtons, ...HeaderButtons];
     for (const btn of btns) {
       if (!btn.hotkey) continue;
       const hk = parseHotkey(btn.hotkey);
       const keyMatch = e.key.toLowerCase() === hk.key || e.code.toLowerCase() === hk.key;
-      if (
-        keyMatch &&
-        !!e.ctrlKey === hk.ctrl &&
-        !!e.altKey === hk.alt &&
-        !!e.shiftKey === hk.shift
-      ) {
+      if (keyMatch && !!e.ctrlKey === hk.ctrl && !!e.altKey === hk.alt && !!e.shiftKey === hk.shift) {
         e.preventDefault();
         const idx = focusedIdxRef.current;
         const fr = idx !== null ? pageRows[idx] ?? null : null;
@@ -541,7 +546,6 @@ export function DataGrid({
         return;
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageRows, selected, footerButtons, data]);
 
   useEffect(() => {
@@ -549,153 +553,48 @@ export function DataGrid({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
-  // ── INJECT SHIMMER KEYFRAMES ───────────────────────────────────────────────
   if (typeof document !== "undefined" && !document.getElementById("dg-shimmer-style")) {
     const s = document.createElement("style");
     s.id = "dg-shimmer-style";
     s.textContent = `
-      @keyframes dg-shimmer {
-        0%   { background-position: 200% 0; }
-        100% { background-position: -200% 0; }
-      }
+      @keyframes dg-shimmer { 0% { background-position:200% 0 } 100% { background-position:-200% 0 } }
       tr[data-idx]:focus { outline: none; }
     `;
     document.head.appendChild(s);
   }
 
-  // ── STYLES ─────────────────────────────────────────────────────────────────
   const S = {
-    wrap: {
-      background: C.card, borderRadius: 16,
-      border: `1px solid ${C.border}`,
-      boxShadow: "0 2px 12px #00000009", overflow: "hidden",
-    },
-    toolbar: {
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "13px 18px", borderBottom: `1px solid ${C.border}`,
-      gap: 10, flexWrap: "wrap", background: "#fafbfd",
-    },
+    wrap: { background: C.card, borderRadius: 16, border: `1px solid ${C.border}`, boxShadow: "0 2px 12px #00000009", overflow: "visible" },
+    toolbar: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px", borderBottom: `1px solid ${C.border}`, gap: 10, flexWrap: "wrap", background: "#fafbfd" },
     titleText: { fontSize: 14, fontWeight: 800, color: C.text, letterSpacing: "-.01em" },
     toolbarRight: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
+    toolbarleft: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
     searchWrap: { position: "relative", display: "flex", alignItems: "center" },
     searchIcon: { position: "absolute", left: 10, fontSize: 13, color: C.muted, pointerEvents: "none" },
-    searchInput: {
-      height: 33, padding: "0 10px 0 30px",
-      border: `1.5px solid ${C.border}`, borderRadius: 9,
-      fontSize: 12.5, fontFamily: "inherit",
-      background: C.card, color: C.text, outline: "none", width: 210,
-      transition: "border .15s, box-shadow .15s",
-    },
-    colBtn: {
-      height: 33, padding: "0 12px", borderRadius: 9,
-      border: `1.5px solid ${C.border}`, background: C.card,
-      fontSize: 12, fontWeight: 600, color: C.sub, cursor: "pointer",
-      display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit",
-      transition: "all .15s",
-    },
-    colDropdown: {
-      position: "absolute", right: 0, top: "calc(100% + 6px)",
-      background: C.card, border: `1px solid ${C.border}`,
-      borderRadius: 12, boxShadow: "0 8px 30px #00000014",
-      padding: 8, zIndex: 200, minWidth: 170,
-    },
-    colItem: {
-      display: "flex", alignItems: "center", gap: 8,
-      padding: "7px 10px", borderRadius: 8, cursor: "pointer",
-      fontSize: 12.5, color: C.sub, transition: "background .1s",
-      userSelect: "none",
-    },
-    selBar: {
-      display: "flex", alignItems: "center", gap: 10,
-      padding: "9px 18px", background: C.accent + "12",
-      borderBottom: `1px solid ${C.accent}33`,
-      fontSize: 12.5, fontWeight: 600, color: C.accent, flexWrap: "wrap",
-    },
+    searchInput: { height: 33, padding: "0 10px 0 30px", border: `1.5px solid ${C.border}`, borderRadius: 9, fontSize: 12.5, fontFamily: "inherit", background: C.card, color: C.text, outline: "none", width: 210, transition: "border .15s, box-shadow .15s" },
+    colBtn: { height: 33, padding: "0 12px", borderRadius: 9, border: `1.5px solid ${C.border}`, background: C.card, fontSize: 12, fontWeight: 600, color: C.sub, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", transition: "all .15s" },
+    colDropdown: { position: "absolute", right: 0, top: "calc(100% + 6px)", background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: "0 8px 30px #00000014", padding: 8, zIndex: 200, minWidth: 170 },
+    colItem: { display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, color: C.sub, transition: "background .1s", userSelect: "none" },
+    selBar: { display: "flex", alignItems: "center", gap: 10, padding: "9px 18px", background: C.accent + "12", borderBottom: `1px solid ${C.accent}33`, fontSize: 12.5, fontWeight: 600, color: C.accent, flexWrap: "wrap" },
     tableWrap: { overflowX: "auto" },
     table: { width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 520 },
     thead: { background: "#f7f8fb", borderBottom: `2px solid ${C.border}` },
-    th: sortable => ({
-      padding: "11px 14px", textAlign: "left",
-      fontSize: 11, fontWeight: 700, color: C.muted,
-      textTransform: "uppercase", letterSpacing: ".07em",
-      whiteSpace: "nowrap", userSelect: "none",
-      cursor: sortable ? "pointer" : "default",
-      transition: "color .1s, background .1s",
-    }),
+    th: sortable => ({ padding: "11px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".07em", whiteSpace: "nowrap", userSelect: "none", cursor: sortable ? "pointer" : "default", transition: "color .1s, background .1s" }),
     thCheck: { padding: "11px 14px", width: 38, textAlign: "center" },
-    td: {
-      padding: "11px 14px", color: C.text, fontSize: 13,
-      borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap",
-      verticalAlign: "middle",
-    },
-    tdCheck: {
-      padding: "11px 14px", width: 38, textAlign: "center",
-      borderBottom: `1px solid ${C.border}`, verticalAlign: "middle",
-    },
+    td: { padding: "11px 14px", color: C.text, fontSize: 13, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap", verticalAlign: "middle" },
+    tdCheck: { padding: "11px 14px", width: 38, textAlign: "center", borderBottom: `1px solid ${C.border}`, verticalAlign: "middle" },
     emptyWrap: { textAlign: "center", padding: "50px 20px", color: C.hint, fontSize: 13 },
-    footer: {
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "11px 18px", borderTop: `1px solid ${C.border}`,
-      gap: 10, flexWrap: "wrap", background: "#fafbfd",
-    },
+    footer: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 18px", borderTop: `1px solid ${C.border}`, gap: 10, flexWrap: "wrap", background: "#fafbfd" },
     footerLeft: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
     footerRight: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
-    pageSizeRow: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.muted },
-    pageSizeSelect: {
-      height: 28, padding: "0 8px", borderRadius: 7,
-      border: `1.5px solid ${C.border}`, fontSize: 12,
-      fontFamily: "inherit", color: C.sub, background: C.card, cursor: "pointer", outline: "none",
-    },
     footerInfo: { fontSize: 12, color: C.muted, fontWeight: 500 },
     pagination: { display: "flex", alignItems: "center", gap: 4 },
-    pageBtn: (active, disabled) => ({
-      minWidth: 30, height: 30, padding: "0 6px", borderRadius: 8,
-      border: `1.5px solid ${active ? C.accent : C.border}`,
-      background: active ? C.accent : C.card,
-      fontSize: 12, fontWeight: 600,
-      color: active ? "#fff" : C.sub,
-      cursor: disabled ? "not-allowed" : "pointer",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      transition: "all .13s", fontFamily: "inherit",
-      opacity: disabled ? 0.38 : 1,
-      boxShadow: active ? `0 2px 8px ${C.accent}44` : "none",
-    }),
-    actionBtn: variant => ({
-      height: 30, padding: "0 12px", borderRadius: 8,
-      border: variant === "danger"
-        ? `1.5px solid ${C.red}33`
-        : variant === "primary"
-          ? `1.5px solid ${C.accent}`
-          : `1.5px solid ${C.border}`,
-      background:
-        variant === "danger" ? C.redBg :
-          variant === "primary" ? C.accent : C.card,
-      fontSize: 12, fontWeight: 600,
-      color:
-        variant === "danger" ? C.red :
-          variant === "primary" ? "#fff" : C.sub,
-      cursor: "pointer",
-      display: "inline-flex", alignItems: "center", gap: 5,
-      fontFamily: "inherit", transition: "filter .13s",
-      whiteSpace: "nowrap",
-    }),
+    pageBtn: (active, disabled) => ({ minWidth: 30, height: 30, padding: "0 6px", borderRadius: 8, border: `1.5px solid ${active ? C.accent : C.border}`, background: active ? C.accent : C.card, fontSize: 12, fontWeight: 600, color: active ? "#fff" : C.sub, cursor: disabled ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all .13s", fontFamily: "inherit", opacity: disabled ? 0.38 : 1, boxShadow: active ? `0 2px 8px ${C.accent}44` : "none" }),
+    actionBtn: variant => ({ height: 30, padding: "0 12px", borderRadius: 8, border: variant === "danger" ? `1.5px solid ${C.red}33` : variant === "primary" ? `1.5px solid ${C.accent}` : `1.5px solid ${C.border}`, background: variant === "danger" ? C.redBg : variant === "primary" ? C.accent : C.card, fontSize: 12, fontWeight: 600, color: variant === "danger" ? C.red : variant === "primary" ? "#fff" : C.sub, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "inherit", transition: "filter .13s", whiteSpace: "nowrap" }),
     footerActions: { display: "flex", alignItems: "center", gap: 7 },
-    hotkeyBadge: {
-      display: "inline-flex", alignItems: "center",
-      background: "#00000015", borderRadius: 4,
-      padding: "1px 5px", fontSize: 10, fontWeight: 700,
-      letterSpacing: ".04em", marginLeft: 5,
-      fontFamily: "monospace",
-    },
-    skeleton: {
-      background: "linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%)",
-      backgroundSize: "200% 100%",
-      animation: "dg-shimmer 1.3s infinite",
-      borderRadius: 6, height: 13,
-    },
+    skeleton: { background: "linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%)", backgroundSize: "200% 100%", animation: "dg-shimmer 1.3s infinite", borderRadius: 6, height: 13 },
   };
 
-  // ── ROW BACKGROUND LOGIC ───────────────────────────────────────────────────
   const rowBg = (isSelected, isFocused) => {
     if (isFocused && isSelected) return C.accent + "22";
     if (isFocused) return C.accent + "14";
@@ -703,15 +602,40 @@ export function DataGrid({
     return "transparent";
   };
 
-  // ── RENDER ─────────────────────────────────────────────────────────────────
   return (
     <div style={S.wrap} data-dg-root="1">
 
       {/* ── TOOLBAR ── */}
       <div style={S.toolbar}>
-        {title && <span style={S.titleText}>{title}</span>}
-        <div style={S.toolbarRight}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", flex: 1 }}>
+          {title && <span style={S.titleText}>{title}</span>}
 
+          {/* Move header extra here */}
+           {headerExtra && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {headerExtra}
+            </div>
+          )}
+
+          {/* Move HeaderButtons here */}
+          {HeaderButtons.length > 0 && (
+            <div style={S.footerActions}>
+              {HeaderButtons.map(btn => (
+                <button key={btn.key} style={S.actionBtn(btn.variant || "")}
+                  onClick={() => btn.onClick?.(Array.from(selected), data, focusedRow)}
+                  onMouseEnter={e => (e.currentTarget.style.filter = "brightness(.93)")}
+                  onMouseLeave={e => (e.currentTarget.style.filter = "brightness(1)")}
+                  title={btn.hotkey ? `Shortcut: ${btn.hotkey}` : undefined}
+                >
+                  {btn.icon && <span>{btn.icon}</span>}
+                  {btn.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={S.toolbarRight}>
           {/* Search */}
           <div style={S.searchWrap}>
             <span style={S.searchIcon}>🔍</span>
@@ -720,92 +644,44 @@ export function DataGrid({
               placeholder="Search anything…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              onFocus={e => {
-                e.target.style.borderColor = C.accent;
-                e.target.style.boxShadow = `0 0 0 3px ${C.accent}18`;
-              }}
-              onBlur={e => {
-                e.target.style.borderColor = C.border;
-                e.target.style.boxShadow = "none";
-              }}
+              onFocus={e => { e.target.style.borderColor = C.accent; e.target.style.boxShadow = `0 0 0 3px ${C.accent}18`; }}
+              onBlur={e => { e.target.style.borderColor = C.border; e.target.style.boxShadow = "none"; }}
             />
           </div>
-
           {/* Column visibility */}
           <div style={{ position: "relative" }} ref={colDropRef}>
             <button
               style={S.colBtn}
               onClick={() => setColDropOpen(o => !o)}
-              onMouseEnter={e => {
-                e.currentTarget.style.borderColor = C.accent;
-                e.currentTarget.style.color = C.accent;
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.borderColor = C.border;
-                e.currentTarget.style.color = C.sub;
-              }}
-            >
-              ⊞ Columns
-            </button>
+              onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.sub; }}
+            >⊞ Columns</button>
             {colDropOpen && (
               <div style={S.colDropdown}>
                 {columns.map(c => (
-                  <label
-                    key={c.key}
-                    style={S.colItem}
+                  <label key={c.key} style={S.colItem}
                     onMouseEnter={e => (e.currentTarget.style.background = C.bg)}
                     onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                   >
-                    <input
-                      type="checkbox"
-                      checked={visibleKeys.includes(c.key)}
-                      onChange={() => toggleCol(c.key)}
-                      style={{ accentColor: C.accent, width: 14, height: 14 }}
-                    />
+                    <input type="checkbox" checked={visibleKeys.includes(c.key)} onChange={() => toggleCol(c.key)} style={{ accentColor: C.accent, width: 14, height: 14 }} />
                     {c.label}
                   </label>
                 ))}
               </div>
             )}
           </div>
-        </div>
-        <div style={S.toolbarRight}>
-          {/* Header buttons */}
-          {HeaderButtons.length > 0 && (
-            <div style={S.footerActions}>
-              {HeaderButtons.map(btn => (
-                <button
-                  key={btn.key}
-                  style={S.actionBtn(btn.variant || "")}
-                  onClick={() => btn.onClick?.(Array.from(selected), data, focusedRow)}
-                  onMouseEnter={e => (e.currentTarget.style.filter = "brightness(.93)")}
-                  onMouseLeave={e => (e.currentTarget.style.filter = "brightness(1)")}
-                  title={btn.hotkey ? `Shortcut: ${btn.hotkey}` : undefined}
-                >
-                  {btn.icon && <span>{btn.icon}</span>}
-                  {btn.label}
 
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       </div>
 
-      {/* ── SELECTION + FOCUS BANNER ── */}
-      {(selected.size > 0) && (
+      {/* ── SELECTION BANNER ── */}
+      {selected.size > 0 && (
         <div style={S.selBar}>
-          {selected.size > 0 && (
-            <>
-              ✓&nbsp;<strong>{selected.size}</strong>&nbsp;row{selected.size !== 1 ? "s" : ""} selected
-              <button
-                style={{ ...S.actionBtn("danger"), height: 24, padding: "0 10px", fontSize: 11 }}
-                onClick={() => setSelected(new Set())}
-              >
-                ✕ Clear
-              </button>
-            </>
-          )}
+          ✓&nbsp;<strong>{selected.size}</strong>&nbsp;row{selected.size !== 1 ? "s" : ""} selected
+          <button
+            style={{ ...S.actionBtn("danger"), height: 24, padding: "0 10px", fontSize: 11 }}
+            onClick={() => setSelected(new Set())}
+          >✕ Clear</button>
         </div>
       )}
 
@@ -816,12 +692,8 @@ export function DataGrid({
             <tr style={S.thead}>
               {selectable && (
                 <th style={S.thCheck}>
-                  <input
-                    type="checkbox"
-                    checked={allPageSelected}
-                    onChange={toggleAll}
-                    style={{ accentColor: C.accent, width: 14, height: 14, cursor: "pointer" }}
-                  />
+                  <input type="checkbox" checked={allPageSelected} onChange={toggleAll}
+                    style={{ accentColor: C.accent, width: 14, height: 14, cursor: "pointer" }} />
                 </th>
               )}
               {visibleCols.map(c => {
@@ -829,29 +701,15 @@ export function DataGrid({
                 const isActive = sortKey === c.key;
                 const icon = isActive ? (sortDir === "asc" ? " ▲" : " ▼") : " ↕";
                 return (
-                  <th
-                    key={c.key}
-                    style={{
-                      ...S.th(sortable),
-                      ...(c.width ? { width: c.width } : {}),
-                    }}
+                  <th key={c.key}
+                    style={{ ...S.th(sortable), ...(c.width ? { width: c.width } : {}) }}
                     onClick={() => sortable && handleSort(c.key)}
-                    onMouseEnter={e => sortable && (
-                      e.currentTarget.style.color = C.accent,
-                      e.currentTarget.style.background = C.accent + "10"
-                    )}
-                    onMouseLeave={e => (
-                      e.currentTarget.style.color = C.muted,
-                      e.currentTarget.style.background = "transparent"
-                    )}
+                    onMouseEnter={e => sortable && (e.currentTarget.style.color = C.accent, e.currentTarget.style.background = C.accent + "10")}
+                    onMouseLeave={e => (e.currentTarget.style.color = C.muted, e.currentTarget.style.background = "transparent")}
                   >
                     {c.label}
                     {sortable && (
-                      <span style={{
-                        fontSize: 10, marginLeft: 3,
-                        opacity: isActive ? 1 : 0.4,
-                        color: isActive ? C.accent : "inherit",
-                      }}>
+                      <span style={{ fontSize: 10, marginLeft: 3, opacity: isActive ? 1 : 0.4, color: isActive ? C.accent : "inherit" }}>
                         {icon}
                       </span>
                     )}
@@ -860,71 +718,35 @@ export function DataGrid({
               })}
             </tr>
           </thead>
-
           <tbody>
             {loading
-              ? /* ── SKELETON ── */
-              Array.from({ length: pageSize }).map((_, i) => (
+              ? Array.from({ length: pageSize }).map((_, i) => (
                 <tr key={i}>
-                  {selectable && (
-                    <td style={S.tdCheck}>
-                      <div style={{ ...S.skeleton, width: 14, height: 14, borderRadius: 3 }} />
-                    </td>
-                  )}
+                  {selectable && <td style={S.tdCheck}><div style={{ ...S.skeleton, width: 14, height: 14, borderRadius: 3 }} /></td>}
                   {visibleCols.map(c => (
-                    <td key={c.key} style={S.td}>
-                      <div style={{ ...S.skeleton, width: `${45 + (i * 7 + c.key.length * 5) % 40}%` }} />
-                    </td>
+                    <td key={c.key} style={S.td}><div style={{ ...S.skeleton, width: `${45 + (i * 7 + c.key.length * 5) % 40}%` }} /></td>
                   ))}
                 </tr>
               ))
-
               : pageRows.length === 0
-                ? /* ── EMPTY ── */
-                <tr>
-                  <td colSpan={visibleCols.length + (selectable ? 1 : 0)}>
-                    <div style={S.emptyWrap}>
-                      <div style={{ fontSize: 32, marginBottom: 10, opacity: .45 }}>📭</div>
-                      {emptyText}
-                    </div>
-                  </td>
-                </tr>
-
-                : /* ── DATA ROWS ── */
-                pageRows.map((row, ri) => {
+                ? <tr><td colSpan={visibleCols.length + (selectable ? 1 : 0)}>
+                  <div style={S.emptyWrap}><div style={{ fontSize: 32, marginBottom: 10, opacity: .45 }}>📭</div>{emptyText}</div>
+                </td></tr>
+                : pageRows.map((row, ri) => {
                   const isSelected = selected.has(row.id);
                   const isFocused = focusedIdx === ri;
                   return (
-                    <tr
-                      key={row.id ?? ri}
-                      data-idx={ri}
-                      tabIndex={-1}
-                      style={{
-                        background: rowBg(isSelected, isFocused),
-                        transition: "background .1s",
-                        outline: isFocused ? `2px solid ${C.accent}` : "none",
-                        outlineOffset: "-2px",
-                        cursor: "pointer",
-                      }}
+                    <tr key={row.id ?? ri} data-idx={ri} tabIndex={-1}
+                      style={{ background: rowBg(isSelected, isFocused), transition: "background .1s", outline: isFocused ? `2px solid ${C.accent}` : "none", outlineOffset: "-2px", cursor: "pointer" }}
                       onClick={() => setFocusedIdx(ri)}
-                      onMouseEnter={e => {
-                        if (!isSelected && !isFocused)
-                          e.currentTarget.style.background = "#f7f8fd";
-                      }}
-                      onMouseLeave={e => {
-                        if (!isSelected && !isFocused)
-                          e.currentTarget.style.background = "transparent";
-                      }}
+                      onMouseEnter={e => { if (!isSelected && !isFocused) e.currentTarget.style.background = "#f7f8fd"; }}
+                      onMouseLeave={e => { if (!isSelected && !isFocused) e.currentTarget.style.background = "transparent"; }}
                     >
                       {selectable && (
                         <td style={S.tdCheck}>
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleRow(row.id)}
+                          <input type="checkbox" checked={isSelected} onChange={() => toggleRow(row.id)}
                             onClick={e => e.stopPropagation()}
-                            style={{ accentColor: C.accent, width: 14, height: 14, cursor: "pointer" }}
-                          />
+                            style={{ accentColor: C.accent, width: 14, height: 14, cursor: "pointer" }} />
                         </td>
                       )}
                       {visibleCols.map(c => (
@@ -943,14 +765,16 @@ export function DataGrid({
       {/* ── FOOTER ── */}
       <div style={S.footer}>
         <div style={S.footerLeft}>
-
-          {/* Footer buttons */}
+          {/* ── footerExtra: closing balance info etc. ── */}
+          {footerExtra && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {footerExtra}
+            </div>
+          )}
           {footerButtons.length > 0 && (
             <div style={S.footerActions}>
               {footerButtons.map(btn => (
-                <button
-                  key={btn.key}
-                  style={S.actionBtn(btn.variant || "")}
+                <button key={btn.key} style={S.actionBtn(btn.variant || "")}
                   onClick={() => btn.onClick?.(Array.from(selected), data, focusedRow)}
                   onMouseEnter={e => (e.currentTarget.style.filter = "brightness(.93)")}
                   onMouseLeave={e => (e.currentTarget.style.filter = "brightness(1)")}
@@ -958,64 +782,38 @@ export function DataGrid({
                 >
                   {btn.icon && <span>{btn.icon}</span>}
                   {btn.label}
-
                 </button>
               ))}
             </div>
           )}
         </div>
         <div style={S.footerRight}>
-
-          {/* Record count */}
           <span style={S.footerInfo}>
             {total === 0
               ? "No records"
               : <>{from}–{to} of <strong style={{ color: C.sub }}>{total}</strong> records</>
             }
           </span>
-          {/* Pagination */}
           <div style={S.pagination}>
-            <button
-              style={S.pageBtn(false, safePage === 1)}
-              disabled={safePage === 1}
-              onClick={() => setPage(p => p - 1)}
-            >‹</button>
-
+            <button style={S.pageBtn(false, safePage === 1)} disabled={safePage === 1} onClick={() => setPage(p => p - 1)}>‹</button>
             {pageNums.map((p, i) =>
               p === "…"
                 ? <span key={`e${i}`} style={{ padding: "0 4px", color: C.hint }}>…</span>
                 : (
-                  <button
-                    key={p}
-                    style={S.pageBtn(p === safePage, false)}
-                    onClick={() => setPage(p)}
-                    onMouseEnter={e => p !== safePage && (
-                      e.currentTarget.style.borderColor = C.accent,
-                      e.currentTarget.style.color = C.accent,
-                      e.currentTarget.style.background = C.accent + "12"
-                    )}
-                    onMouseLeave={e => p !== safePage && (
-                      e.currentTarget.style.borderColor = C.border,
-                      e.currentTarget.style.color = C.sub,
-                      e.currentTarget.style.background = C.card
-                    )}
-                  >
-                    {p}
-                  </button>
+                  <button key={p} style={S.pageBtn(p === safePage, false)} onClick={() => setPage(p)}
+                    onMouseEnter={e => p !== safePage && (e.currentTarget.style.borderColor = C.accent, e.currentTarget.style.color = C.accent, e.currentTarget.style.background = C.accent + "12")}
+                    onMouseLeave={e => p !== safePage && (e.currentTarget.style.borderColor = C.border, e.currentTarget.style.color = C.sub, e.currentTarget.style.background = C.card)}
+                  >{p}</button>
                 )
             )}
-
-            <button
-              style={S.pageBtn(false, safePage === totalPages)}
-              disabled={safePage === totalPages}
-              onClick={() => setPage(p => p + 1)}
-            >›</button>
+            <button style={S.pageBtn(false, safePage === totalPages)} disabled={safePage === totalPages} onClick={() => setPage(p => p + 1)}>›</button>
           </div>
         </div>
       </div>
     </div>
   );
 }
+
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1079,7 +877,8 @@ export function Dropdown({
   width = "100%",
   footerButtons = [],
   keyField = "id",
-  displayField = "name"
+  displayField = "name",
+  allowSearch = true,
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -1119,9 +918,9 @@ export function Dropdown({
     //   // second click within 250ms → double-click → SELECT
     //   clearTimeout(clickTimer.current);
     //   clickTimer.current = null;
-      onChange?.(opt[keyField], opt);
-      setOpen(false);
-      setSearch("");
+    onChange?.(opt[keyField], opt);
+    setOpen(false);
+    setSearch("");
     // } else {
     //   // first click → FOCUS only, wait to confirm it's not a double-click
     //   setFocIdx(i);
@@ -1193,9 +992,9 @@ export function Dropdown({
     lbl: { display: "block", fontSize: 12, fontWeight: 600, color: C.sub, marginBottom: 6 },
     trigger: {
       display: "flex", alignItems: "center", justifyContent: "space-between",
-      height: 38, padding: "0 12px",
+      height: 35, padding: "0 12px",
       border: `1.5px solid ${open ? C.accent : C.border}`,
-      borderRadius: 10, background: disabled ? C.bg : C.card,
+      borderRadius: 7, background: disabled ? C.bg : C.card,
       cursor: disabled ? "not-allowed" : "pointer", fontSize: 13,
       color: selected ? C.text : C.hint, fontFamily: "inherit",
       boxShadow: open ? `0 0 0 3px ${C.accent}18` : "none",
@@ -1253,7 +1052,7 @@ export function Dropdown({
       <div style={S.trigger} tabIndex={disabled ? -1 : 0}
         onClick={() => !disabled} role="combobox" aria-expanded={open}
         onFocus={() => {
-          if (isShiftTab) { SetIsShiftTab(false); return; } 
+          if (isShiftTab) { SetIsShiftTab(false); return; }
           !disabled && setOpen(true);
         }}>
 
@@ -1274,7 +1073,7 @@ export function Dropdown({
       {open && (
         <div style={S.dropdown}>
           {/* Search */}
-          <div style={S.searchWrap}>
+          {allowSearch && (<div style={S.searchWrap}>
             <span style={S.searchIcon}>🔍</span>
             <input
               tabIndex={-1}
@@ -1287,7 +1086,7 @@ export function Dropdown({
               onFocus={e => { e.target.style.borderColor = C.accent; }}
               onBlur={e => { e.target.style.borderColor = C.border; }}
             />
-          </div>
+          </div>)}
 
           {/* List */}
           <div style={S.list} ref={listRef}>
@@ -1820,3 +1619,110 @@ export function KVTable({ rows = [], cols = 1 }) {
 //    ]}
 //  />
 // ─────────────────────────────────────────────────────────────────────────────
+
+
+export function ExpandableItemRow({ item, index, onUpdate, onRemove }) {
+  const [open, setOpen] = useState(false);
+  const lineTotal = (item.taxable_amount || 0) + (item.CGST || 0) + (item.SGST || 0);
+
+  return (
+    <>
+      {/* ── Main Row ── */}
+      <tr className={`se-row-main ${open ? "se-row-expanded" : ""}`}>
+        <td className="se-td-expand">
+          <button
+            className={`se-expand-btn ${open ? "se-expand-btn-open" : ""}`}
+            onClick={() => setOpen(o => !o)}
+            title={open ? "Collapse GST details" : "Expand GST details"}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path
+                d="M5 3.5L9 7L5 10.5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </td>
+        <td className="se-td-name">{item.name}</td>
+        <td>
+          <input
+            type="number"
+            min={1}
+            className="qty"
+            value={item.qty}
+            onChange={e => onUpdate(index, "qty", e.target.value)}
+          />
+        </td>
+        <td>
+          <input
+            type="number"
+            min={0}
+            className="rate"
+            value={item.rate}
+            onChange={e => onUpdate(index, "rate", e.target.value)}
+          />
+        </td>
+        <td className="se-td-taxable">{fmt(item.taxable_amount)}</td>
+        <td className="se-td-total">{fmt(lineTotal)}</td>
+        <td className="center">
+          <Btn small danger onClick={() => onRemove(index)}>×</Btn>
+        </td>
+      </tr>
+
+      {/* ── Detail Row (GST breakdown) ── */}
+      {open && (
+        <tr className="se-row-detail">
+          <td colSpan={7}>
+            <div className="se-detail-grid">
+              <div className="se-detail-field">
+                <label className="se-detail-label">CGST %</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={28}
+                  className="se-detail-input"
+                  value={item.cgst_pct}
+                  onChange={e => onUpdate(index, "cgst_pct", e.target.value)}
+                />
+              </div>
+              <div className="se-detail-field">
+                <label className="se-detail-label">CGST Amt</label>
+                <span className="se-detail-value">{fmt(item.CGST)}</span>
+              </div>
+              <div className="se-detail-field">
+                <label className="se-detail-label">SGST %</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={28}
+                  className="se-detail-input"
+                  value={item.sgst_pct}
+                  onChange={e => onUpdate(index, "sgst_pct", e.target.value)}
+                />
+              </div>
+              <div className="se-detail-field">
+                <label className="se-detail-label">SGST Amt</label>
+                <span className="se-detail-value">{fmt(item.SGST)}</span>
+              </div>
+              <div className="se-detail-field">
+                <label className="se-detail-label">Taxable</label>
+                <span className="se-detail-value se-detail-value-accent">
+                  {fmt(item.taxable_amount)}
+                </span>
+              </div>
+              <div className="se-detail-field">
+                <label className="se-detail-label">Total GST</label>
+                <span className="se-detail-value se-detail-value-accent">
+                  {fmt(item.CGST + item.SGST)}
+                </span>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}

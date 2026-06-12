@@ -4,9 +4,10 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "Run API",
+      "name": "Debug Backend",
       "program": "${workspaceFolder}/backend/server.js",
-      "skipFiles": ["<node_internals>/**"]
+      "cwd": "${workspaceFolder}/backend",   // ← working dir = backend folder
+      "envFile": "${workspaceFolder}/backend/.env"  // ← point directly to .env
     }
   ]
 }
