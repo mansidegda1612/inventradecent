@@ -34,6 +34,9 @@ app.use("/api/",  require("./routes/transaction"));
 app.use("/api/",  require("./routes/user"));
 app.use("/api/",  require("./routes/userrole"));
 app.use("/api/",  require("./routes/dashboard"));
+app.use("/api/",  require("./routes/accountReports"));
+app.use("/api/",  require("./routes/inventoryReport"));
+app.use("/api/",  require("./routes/balanceSheet"));
 
 // ─── Health Check ─────────────────────────────────────────────────────────
 app.get("/", (req, res) => res.json({ success: true, message: "API running" }));

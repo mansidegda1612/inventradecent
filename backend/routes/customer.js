@@ -1,12 +1,12 @@
 const router = require("express").Router();
-const pool   = require("../config/db");
-const auth   = require("../middleware/AuthMiddleware");
+const pool = require("../config/db");
+const auth = require("../middleware/AuthMiddleware");
 
 router.use(auth);
 
 // GET /api/customers  — with search, pagination, group filter
 router.get("/customers/", async (req, res) => {
- // #swagger.tags = ['Customers']
+  // #swagger.tags = ['Customers']
   const { page = 1, limit = 10, search = "", group = "" } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
 
@@ -38,7 +38,7 @@ router.get("/customers/", async (req, res) => {
 
 // GET /api/customers/dropdown  — id+name only for bill dropdowns
 router.get("/customers/dropdown", async (req, res) => {
- // #swagger.tags = ['Customers']
+  // #swagger.tags = ['Customers']
   try {
     const [rows] = await pool.query("SELECT id, name, contact_no, gstin FROM customer ORDER BY name ASC");
     res.json({ success: true, data: rows });
@@ -49,7 +49,7 @@ router.get("/customers/dropdown", async (req, res) => {
 
 // GET /api/customers/:id  — single customer with ledger summary
 router.get("/customers/:id", async (req, res) => {
- // #swagger.tags = ['Customers']
+  // #swagger.tags = ['Customers']
   try {
     const [rows] = await pool.query(
       "SELECT c.*, g.name AS group_name FROM customer c LEFT JOIN `group` g ON c.group=g.id WHERE c.id=?",
@@ -64,13 +64,13 @@ router.get("/customers/:id", async (req, res) => {
 
 // GET /api/customers/:id/ledger  — full transaction history for a customer
 router.get("/customers/:id/ledger", async (req, res) => {
- // #swagger.tags = ['Customers']
+  // #swagger.tags = ['Customers']
   const { from, to } = req.query;
   try {
     let where = "WHERE t.customer_id=?";
     const params = [req.params.id];
     if (from) { where += " AND DATE(t.date)>=?"; params.push(from); }
-    if (to)   { where += " AND DATE(t.date)<=?"; params.push(to); }
+    if (to) { where += " AND DATE(t.date)<=?"; params.push(to); }
 
     const [rows] = await pool.query(
       `SELECT t.*, p.name AS product_name FROM transaction t
@@ -86,13 +86,13 @@ router.get("/customers/:id/ledger", async (req, res) => {
 
 // POST /api/customers
 router.post("/customers/", async (req, res) => {
- // #swagger.tags = ['Customers']
-  const { name, contact_no, city, gstin, group, address, opening, credit, debit, closing } = req.body;
+  // #swagger.tags = ['Customers']
+  const { name, contact_no, city, gstin, group, address, opening } = req.body;
   if (!name) return res.status(400).json({ success: false, message: "name is required" });
   try {
     const [r] = await pool.query(
-      "INSERT INTO customer (name,contact_no,city,gstin,`group`,address,opening,credit,debit,closing) VALUES (?,?,?,?,?,?,?,?,?,?)",
-      [name, contact_no||null, city||null, gstin||null, group||null, address||null, opening||0, credit||0, debit||0, closing||0]
+      "INSERT INTO customer (name,contact_no,city,gstin,`group`,address,opening,closing) VALUES (?,?,?,?,?,?,?,?)",
+      [name, contact_no || null, city || null, gstin || null, group || null, address || null, opening || 0, opening || 0]
     );
     res.status(201).json({ success: true, message: "Customer created", data: { id: r.insertId } });
   } catch (e) {
@@ -102,13 +102,29 @@ router.post("/customers/", async (req, res) => {
 
 // PUT /api/customers/:id
 router.put("/customers/:id", async (req, res) => {
- // #swagger.tags = ['Customers']
-  const { name, contact_no, city, gstin, group, address, opening, credit, debit, closing } = req.body;
+  // #swagger.tags = ['Customers']
+  const { name, contact_no, city, gstin, group, address, opening } = req.body;
+  let credit = 0, debit = 0;
+  try {
+    const [rows] = await pool.query(
+      "SELECT c.* FROM customer c WHERE c.id=?",
+      [req.params.id]
+    );
+    if (!rows.length)
+      return res.status(404).json({ success: false, message: "Customer not found" });
+    else {
+      credit = rows[0].credit;
+      debit = rows[0].debit;
+    }
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+  let closing = opening + debit - credit;
   if (!name) return res.status(400).json({ success: false, message: "name is required" });
   try {
     const [r] = await pool.query(
-      "UPDATE customer SET name=?,contact_no=?,city=?,gstin=?,`group`=?,address=?,opening=?,credit=?,debit=?,closing=? WHERE id=?",
-      [name, contact_no||null, city||null, gstin||null, group||null, address||null, opening||0, credit||0, debit||0, closing||0, req.params.id]
+      "UPDATE customer SET name=?,contact_no=?,city=?,gstin=?,`group`=?,address=?,opening=?,closing=? WHERE id=?",
+      [name, contact_no || null, city || null, gstin || null, group || null, address || null, opening || 0, closing || 0, req.params.id]
     );
     if (!r.affectedRows) return res.status(404).json({ success: false, message: "Customer not found" });
     res.json({ success: true, message: "Customer updated" });
@@ -119,7 +135,7 @@ router.put("/customers/:id", async (req, res) => {
 
 // DELETE /api/customers/:id
 router.delete("/customers/:id", async (req, res) => {
- // #swagger.tags = ['Customers']
+  // #swagger.tags = ['Customers']
   try {
     const [r] = await pool.query("DELETE FROM customer WHERE id=?", [req.params.id]);
     if (!r.affectedRows) return res.status(404).json({ success: false, message: "Customer not found" });

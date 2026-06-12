@@ -45,6 +45,29 @@ router.get("/products/dropdown", async (req, res) => {
   }
 });
 
+// GET /api/products/generate-barcode  — generate a unique barcode
+router.get("/products/generate-barcode", async (req, res) => {
+  // #swagger.tags = ['Products']
+  try {
+    let barcode;
+    let isUnique = false;
+
+    while (!isUnique) {
+      // Format: PRD + timestamp (last 6 digits) + 3 random digits  = 12 chars
+      const ts = Date.now().toString().slice(-6);
+      const rand = Math.floor(Math.random() * 900 + 100); // 100–999
+      barcode = `PRD${ts}${rand}`;
+
+      const [ex] = await pool.query("SELECT id FROM product WHERE barcode=?", [barcode]);
+      if (!ex.length) isUnique = true;
+    }
+
+    res.json({ success: true, data: { barcode } });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
 // GET /api/products/barcode/:barcode  — scan barcode to fetch product
 router.get("/products/barcode/:barcode", async (req, res) => {
  // #swagger.tags = ['Products']
@@ -87,7 +110,7 @@ router.get("/products/:id", async (req, res) => {
 // POST /api/products
 router.post("/products/", auth, async (req, res) => {
  // #swagger.tags = ['Products']
-  const { name, category, purc_rate, sale_rate, hsn_code, barcode, o_qty } = req.body;
+  const { name, category, purc_rate, sale_rate, hsn_code, barcode,gstPer, o_qty } = req.body;
   if (!name || !purc_rate || !sale_rate)
     return res.status(400).json({ success: false, message: "name, purc_rate and sale_rate required" });
   try {
@@ -97,8 +120,8 @@ router.post("/products/", auth, async (req, res) => {
     }
     const qty = o_qty || 0;
     const [r] = await pool.query(
-      "INSERT INTO product (name,category,purc_rate,sale_rate,hsn_code,barcode,o_qty,p_qty,s_qty,c_qty) VALUES (?,?,?,?,?,?,?,0,0,?)",
-      [name, category||null, purc_rate, sale_rate, hsn_code||null, barcode||null, qty, qty]
+      "INSERT INTO product (name,category,purc_rate,sale_rate,hsn_code,barcode,gstPer,o_qty,p_qty,s_qty,c_qty) VALUES (?,?,?,?,?,?,?,?,0,0,?)",
+      [name, category||null, purc_rate, sale_rate, hsn_code||null, barcode||null,gstPer, qty, qty]
     );
     res.status(201).json({ success: true, message: "Product created", data: { id: r.insertId } });
   } catch (e) {
@@ -109,7 +132,7 @@ router.post("/products/", auth, async (req, res) => {
 // PUT /api/products/:id
 router.put("/products/:id", auth, async (req, res) => {
  // #swagger.tags = ['Products']
-  const { name, category, purc_rate, sale_rate, hsn_code, barcode, o_qty, p_qty, s_qty, c_qty } = req.body;
+  const { name, category, purc_rate, sale_rate, hsn_code, barcode,gstPer, o_qty, p_qty, s_qty, c_qty } = req.body;
   if (!name || !purc_rate || !sale_rate)
     return res.status(400).json({ success: false, message: "name, purc_rate and sale_rate required" });
   try {
@@ -118,8 +141,8 @@ router.put("/products/:id", auth, async (req, res) => {
       if (ex.length) return res.status(409).json({ success: false, message: "Barcode used by another product" });
     }
     const [r] = await pool.query(
-      "UPDATE product SET name=?,category=?,purc_rate=?,sale_rate=?,hsn_code=?,barcode=?,o_qty=?,p_qty=?,s_qty=?,c_qty=? WHERE id=?",
-      [name, category||null, purc_rate, sale_rate, hsn_code||null, barcode||null, o_qty||0, p_qty||0, s_qty||0, c_qty||0, req.params.id]
+      "UPDATE product SET name=?,category=?,purc_rate=?,sale_rate=?,hsn_code=?,barcode=?,gstPer=?,o_qty=?,p_qty=?,s_qty=?,c_qty=? WHERE id=?",
+      [name, category||null, purc_rate, sale_rate, hsn_code||null, barcode||null,gstPer || 0, o_qty||0, p_qty||0, s_qty||0, c_qty||0, req.params.id]
     );
     if (!r.affectedRows) return res.status(404).json({ success: false, message: "Product not found" });
     res.json({ success: true, message: "Product updated" });
@@ -155,5 +178,6 @@ router.delete("/products/:id", auth, async (req, res) => {
     res.status(500).json({ success: false, message: e.message });
   }
 });
+
 
 module.exports = router;

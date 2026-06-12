@@ -1,6 +1,6 @@
 const router = require("express").Router();
-const pool   = require("../config/db");
-const auth   = require("../middleware/AuthMiddleware");
+const pool = require("../config/db");
+const auth = require("../middleware/AuthMiddleware");
 
 router.use(auth);
 
@@ -23,16 +23,21 @@ router.get("/transactions/", async (req, res) => {
     let where = "WHERE 1=1";
     const params = [];
 
-    if (search)      { where += " AND t.bill_no LIKE ?";    params.push(`%${search}%`); }
-    if (customer_id) { where += " AND t.customer_id = ?";   params.push(customer_id); }
-    if (from)        { where += " AND DATE(t.date) >= ?";   params.push(from); }
-    if (to)          { where += " AND DATE(t.date) <= ?";   params.push(to); }
-    if (type === "sale")     { where += " AND t.trans_type = 'SI'"; }
-    if (type === "purchase") { where += " AND t.trans_type = 'PI'"; }
+    if (search) { where += " AND (t.bill_no LIKE ? OR  ANY_VALUE(IFNULL(c.name ,cc.custname)) LIKE ?)"; params.push(`%${search}%`); params.push(`%${search}%`); }
+    if (customer_id) { where += " AND t.customer_id = ?"; params.push(customer_id); }
+    if (from) { where += " AND DATE(t.date) >= ?"; params.push(from); }
+    if (to) { where += " AND DATE(t.date) <= ?"; params.push(to); }
+    if (type === "SI") { where += " AND t.trans_type = 'SI'"; }
+    if (type === "PI") { where += " AND t.trans_type = 'PI'"; }
 
     // Total count
     const [countRows] = await pool.query(
-      `SELECT COUNT(*) AS total FROM \`transaction\` t ${where}`,
+      `SELECT 
+      COUNT(*) AS total 
+      FROM \`transaction\`  t
+      LEFT JOIN customer          c  ON t.customer_id = c.id 
+      LEFT JOIN cashcustdetail          cc  ON t.id = cc.transaction_id
+      ${where}`,
       params
     );
 
@@ -41,11 +46,11 @@ router.get("/transactions/", async (req, res) => {
       `SELECT
          t.id               AS transaction_id,
          t.trans_type,
-         t.credit_debit,
+         t.cash_debit,
          t.bill_no,
          t.date,
          t.customer_id,
-         c.name             AS customer_name,
+        ANY_VALUE(IFNULL(c.name ,cc.custname))            AS customer_name,
          t.taxable_amount,
          t.discount,
          t.ROUNDOFF,
@@ -57,6 +62,7 @@ router.get("/transactions/", async (req, res) => {
          SUM(ti.SGST)       AS total_sgst
        FROM \`transaction\` t
        LEFT JOIN customer          c  ON t.customer_id = c.id
+       LEFT JOIN cashcustdetail          cc  ON t.id = cc.transaction_id
        LEFT JOIN user              u  ON t.userid      = u.id
        LEFT JOIN transaction_items ti ON ti.transaction_id = t.id
        ${where}
@@ -70,9 +76,9 @@ router.get("/transactions/", async (req, res) => {
       success: true,
       data: rows,
       pagination: {
-        total:      countRows[0].total,
-        page:       parseInt(page),
-        limit:      parseInt(limit),
+        total: countRows[0].total,
+        page: parseInt(page),
+        limit: parseInt(limit),
         totalPages: Math.ceil(countRows[0].total / parseInt(limit)),
       },
     });
@@ -88,13 +94,14 @@ router.get("/transactions/", async (req, res) => {
 router.get("/transactions/next-bill-no", async (req, res) => {
   // #swagger.tags = ['Transactions']
   try {
+
     const [rows] = await pool.query(
-      "SELECT bill_no FROM `transaction` ORDER BY id DESC LIMIT 1"
+      "SELECT bill_no FROM `transaction` WHERE  trans_type = 'SI' ORDER BY id DESC LIMIT 1"
     );
     let nextNo = "BILL-0001";
     if (rows.length && rows[0].bill_no) {
       const parts = rows[0].bill_no.split("-");
-      const num   = parseInt(parts[parts.length - 1]) + 1;
+      const num = parseInt(parts[parts.length - 1]) + 1;
       nextNo = `BILL-${String(num).padStart(4, "0")}`;
     }
     res.json({ success: true, data: { bill_no: nextNo } });
@@ -120,9 +127,11 @@ router.get("/transactions/:transaction_id", async (req, res) => {
          c.gstin,
          c.address,
          c.city,
+         cc.custname As customer_name_cash,
          u.name    AS created_by
        FROM \`transaction\` t
        LEFT JOIN customer c ON t.customer_id = c.id
+        LEFT JOIN cashcustdetail   cc  ON t.id = cc.transaction_id
        LEFT JOIN user     u ON t.userid      = u.id
        WHERE t.id = ?`,
       [tid]
@@ -159,7 +168,7 @@ router.get("/transactions/:transaction_id", async (req, res) => {
 // Body:
 // {
 //   trans_type,        -- "SI" | "PI" | "SR" | "PR"
-//   credit_debit,      -- "D" | "C"
+//   cash_debit,      -- "D" | "C"
 //   bill_no,
 //   date,
 //   customer_id,
@@ -175,55 +184,69 @@ router.get("/transactions/:transaction_id", async (req, res) => {
 router.post("/transactions/", async (req, res) => {
   // #swagger.tags = ['Transactions']
   const {
-    trans_type, credit_debit = "D",
-    bill_no, date, customer_id,
-    discount = 0, roundoff = 0,
+    trans_type, cash_debit = "D",
+    bill_no, date, customer_id, customer_name_cash, isGSTBill,
+    expenses,
     final_amount, items,
   } = req.body;
 
-  if (!bill_no || !customer_id || !items?.length)
+  if (!bill_no || (cash_debit == "D" && !customer_id) || (cash_debit == "C" && !customer_name_cash) || !items?.length)
     return res.status(400).json({
       success: false,
-      message: "bill_no, customer_id and items[] are required",
+      message: "bill_no, customer_id , customer_Name and items[] are required",
     });
 
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
-
+    const exp = {};
+    for (const item of expenses) {
+      exp[item.key] = item.amount;
+    }
     // ── Compute totals from items (source of truth) ──────────────────────────
     const taxable_total = items.reduce((s, i) => s + (parseFloat(i.taxable_amount) || 0), 0);
-    const final_total   = parseFloat(final_amount) ||
+    const final_total = parseFloat(final_amount) ||
       (taxable_total
         + items.reduce((s, i) => s + (parseFloat(i.CGST) || 0) + (parseFloat(i.SGST) || 0), 0)
-        - parseFloat(discount)
-        + parseFloat(roundoff));
+        - parseFloat(exp.discount)
+        + parseFloat(exp.roundoff));
 
     // ── Insert master ─────────────────────────────────────────────────────────
     const [masterResult] = await conn.query(
       `INSERT INTO \`transaction\`
-         (trans_type, credit_debit, date, bill_no, customer_id,
+         (trans_type, cash_debit, date, bill_no, isGSTBill,customer_id,
           taxable_amount, ROUNDOFF, discount, final_amount,
           userid, creation_date, updation_date)
-       VALUES (?,?,?,?,?,?,?,?,?,?,NOW(),NOW())`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,NOW(),NOW())`,
       [
-        trans_type, credit_debit,
-        date || new Date(), bill_no, customer_id,
-        taxable_total, roundoff, discount, final_total,
+        trans_type, cash_debit,
+        date || new Date(), bill_no, isGSTBill, customer_id,
+        taxable_total, exp.roundoff, exp.discount, final_total,
         req.user.id,
       ]
     );
     const transaction_id = masterResult.insertId;
+    if (customer_id == 0) {
+      const [CustomerResult] = await conn.query(
+        `INSERT INTO \`cashcustdetail\`
+         (transaction_id, custName)
+         VALUES (?,?)`,
+        [
+          transaction_id, customer_name_cash,
+        ]
+      );
+    }
+
 
     // ── Insert line items + update stock ──────────────────────────────────────
     for (const item of items) {
       const {
         product_id,
-        qty       = 0,
-        rate      = 0,
+        qty = 0,
+        rate = 0,
         taxable_amount = 0,
-        CGST      = 0,
-        SGST      = 0,
+        CGST = 0,
+        SGST = 0,
       } = item;
 
       await conn.query(
@@ -235,17 +258,17 @@ router.post("/transactions/", async (req, res) => {
       );
 
       // Stock: sale = reduce c_qty, purchase = increase c_qty
-      if (trans_type === "SI" || trans_type === "SR") {
-        const sign = trans_type === "SI" ? -1 : +1; // SR = sales return → add back
+      if (trans_type === "SI") {
+        const sign = trans_type === "SI" ? -1 : +1;
         await conn.query(
-          "UPDATE product SET c_qty = c_qty + ? WHERE id = ?",
-          [sign * qty, product_id]
+          "UPDATE product SET c_qty = c_qty + ?, s_qty = s_qty + ? WHERE id = ?",
+          [sign * qty, qty, product_id]   // s_qty always increases (tracks total units sold/returned)
         );
-      } else if (trans_type === "PI" || trans_type === "PR") {
-        const sign = trans_type === "PI" ? +1 : -1; // PR = purchase return → reduce
+      } else if (trans_type === "PI") {
+        const sign = trans_type === "PI" ? +1 : -1;
         await conn.query(
-          "UPDATE product SET c_qty = c_qty + ? WHERE id = ?",
-          [sign * qty, product_id]
+          "UPDATE product SET c_qty = c_qty + ?, p_qty = p_qty + ? WHERE id = ?",
+          [sign * qty, qty, product_id]   // p_qty always increases (tracks total units purchased/returned)
         );
       }
     }
@@ -287,16 +310,16 @@ router.post("/transactions/", async (req, res) => {
 router.put("/transactions/:transaction_id", async (req, res) => {
   // #swagger.tags = ['Transactions']
   const {
-    trans_type, credit_debit = "D",
-    bill_no, date, customer_id,
-    discount = 0, roundoff = 0,
+    trans_type, cash_debit = "D",
+    bill_no, date, customer_id, customer_name_cash, isGSTBill,
+    expenses,
     final_amount, items,
   } = req.body;
 
-  if (!bill_no || !customer_id || !items?.length)
+  if (!bill_no || (cash_debit == "D" && !customer_id) || (cash_debit == "C" && !customer_name_cash) || !items?.length)
     return res.status(400).json({
       success: false,
-      message: "bill_no, customer_id and items[] are required",
+      message: "bill_no, customer_id, customer_Name and items[] are required",
     });
 
   const conn = await pool.getConnection();
@@ -321,13 +344,13 @@ router.put("/transactions/:transaction_id", async (req, res) => {
     for (const oi of oldItems) {
       if (old.trans_type === "SI") {
         await conn.query(
-          "UPDATE product SET c_qty = c_qty + ? WHERE id = ?",
-          [oi.qty, oi.product_id]                   // undo sale
+          "UPDATE product SET c_qty = c_qty + ?, s_qty = s_qty - ? WHERE id = ?",
+          [oi.qty, oi.qty, oi.product_id]
         );
       } else if (old.trans_type === "PI") {
         await conn.query(
-          "UPDATE product SET c_qty = c_qty - ? WHERE id = ?",
-          [oi.qty, oi.product_id]                   // undo purchase
+          "UPDATE product SET c_qty = c_qty - ?, p_qty = p_qty - ? WHERE id = ?",
+          [oi.qty, oi.qty, oi.product_id]
         );
       }
     }
@@ -348,21 +371,27 @@ router.put("/transactions/:transaction_id", async (req, res) => {
     // ── Delete old line items ─────────────────────────────────────────────────
     await conn.query("DELETE FROM transaction_items WHERE transaction_id = ?", [tid]);
 
+    const exp = {};
+    for (const item of expenses) {
+      exp[item.key] = item.amount;
+    }
+
     // ── Compute new totals ────────────────────────────────────────────────────
     const taxable_total = items.reduce((s, i) => s + (parseFloat(i.taxable_amount) || 0), 0);
-    const final_total   = parseFloat(final_amount) ||
+    const final_total = parseFloat(final_amount) ||
       (taxable_total
         + items.reduce((s, i) => s + (parseFloat(i.CGST) || 0) + (parseFloat(i.SGST) || 0), 0)
-        - parseFloat(discount)
-        + parseFloat(roundoff));
+        - parseFloat(exp.discount)
+        + parseFloat(exp.roundoff));
 
     // ── Update master ─────────────────────────────────────────────────────────
     await conn.query(
       `UPDATE \`transaction\` SET
          trans_type     = ?,
-         credit_debit   = ?,
+         cash_debit   = ?,
          date           = ?,
          bill_no        = ?,
+         isGSTBill      = ?,
          customer_id    = ?,
          taxable_amount = ?,
          ROUNDOFF       = ?,
@@ -372,10 +401,20 @@ router.put("/transactions/:transaction_id", async (req, res) => {
          updation_date  = NOW()
        WHERE id = ?`,
       [
-        trans_type, credit_debit,
-        date || new Date(), bill_no, customer_id,
-        taxable_total, roundoff, discount, final_total,
+        trans_type, cash_debit,
+        date || new Date(), bill_no, isGSTBill, customer_id,
+        taxable_total, exp.roundoff, exp.discount, final_total,
         req.user.id, tid,
+      ]
+    );
+
+    await conn.query(
+      `UPDATE \`cashcustdetail\` SET
+         custname  = ?
+       WHERE transaction_id = ?`,
+      [
+        customer_name_cash,
+        tid
       ]
     );
 
@@ -383,11 +422,11 @@ router.put("/transactions/:transaction_id", async (req, res) => {
     for (const item of items) {
       const {
         product_id,
-        qty            = 0,
-        rate           = 0,
+        qty = 0,
+        rate = 0,
         taxable_amount = 0,
-        CGST           = 0,
-        SGST           = 0,
+        CGST = 0,
+        SGST = 0,
       } = item;
 
       await conn.query(
@@ -399,12 +438,16 @@ router.put("/transactions/:transaction_id", async (req, res) => {
       );
 
       if (trans_type === "SI") {
+        const sign = trans_type === "SI" ? -1 : +1;
         await conn.query(
-          "UPDATE product SET c_qty = c_qty - ? WHERE id = ?", [qty, product_id]
+          "UPDATE product SET c_qty = c_qty + ?, s_qty = s_qty + ? WHERE id = ?",
+          [sign * qty, qty, product_id]   // s_qty always increases (tracks total units sold/returned)
         );
       } else if (trans_type === "PI") {
+        const sign = trans_type === "PI" ? +1 : -1;
         await conn.query(
-          "UPDATE product SET c_qty = c_qty + ? WHERE id = ?", [qty, product_id]
+          "UPDATE product SET c_qty = c_qty + ?, p_qty = p_qty + ? WHERE id = ?",
+          [sign * qty, qty, product_id]   // p_qty always increases (tracks total units purchased/returned)
         );
       }
     }
@@ -447,6 +490,7 @@ router.delete("/transactions/:transaction_id", async (req, res) => {
     const [masterRows] = await conn.query(
       "SELECT * FROM `transaction` WHERE id = ?", [tid]
     );
+
     if (!masterRows.length) {
       conn.release();
       return res.status(404).json({ success: false, message: "Transaction not found" });
@@ -462,13 +506,13 @@ router.delete("/transactions/:transaction_id", async (req, res) => {
     for (const item of items) {
       if (master.trans_type === "SI") {
         await conn.query(
-          "UPDATE product SET c_qty = c_qty + ? WHERE id = ?",
-          [item.qty, item.product_id]
+          "UPDATE product SET c_qty = c_qty + ?, s_qty = s_qty - ? WHERE id = ?",
+          [item.qty, item.qty, item.product_id]
         );
       } else if (master.trans_type === "PI") {
         await conn.query(
-          "UPDATE product SET c_qty = c_qty - ? WHERE id = ?",
-          [item.qty, item.product_id]
+          "UPDATE product SET c_qty = c_qty - ?, p_qty = p_qty - ? WHERE id = ?",
+          [item.qty, item.qty, item.product_id]
         );
       }
     }
@@ -488,6 +532,7 @@ router.delete("/transactions/:transaction_id", async (req, res) => {
 
     // Delete items first (FK), then master
     await conn.query("DELETE FROM transaction_items WHERE transaction_id = ?", [tid]);
+    await conn.query("DELETE FROM cashcustdetail WHERE transaction_id = ?", [tid]);
     await conn.query("DELETE FROM `transaction` WHERE id = ?", [tid]);
 
     await conn.commit();

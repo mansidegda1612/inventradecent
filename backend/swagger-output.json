@@ -495,6 +495,25 @@
         }
       }
     },
+    "/dashboard/low-stock": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "description": "",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
     "/products/": {
       "get": {
         "tags": [
@@ -567,6 +586,9 @@
                 "barcode": {
                   "example": "any"
                 },
+                "gstPer": {
+                  "example": "any"
+                },
                 "o_qty": {
                   "example": "any"
                 }
@@ -594,6 +616,22 @@
       }
     },
     "/products/dropdown": {
+      "get": {
+        "tags": [
+          "Products"
+        ],
+        "description": "",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/products/generate-barcode": {
       "get": {
         "tags": [
           "Products"
@@ -732,6 +770,9 @@
                   "example": "any"
                 },
                 "barcode": {
+                  "example": "any"
+                },
+                "gstPer": {
                   "example": "any"
                 },
                 "o_qty": {
@@ -1239,15 +1280,6 @@
                 },
                 "opening": {
                   "example": "any"
-                },
-                "credit": {
-                  "example": "any"
-                },
-                "debit": {
-                  "example": "any"
-                },
-                "closing": {
-                  "example": "any"
                 }
               }
             }
@@ -1354,15 +1386,6 @@
                   "example": "any"
                 },
                 "opening": {
-                  "example": "any"
-                },
-                "credit": {
-                  "example": "any"
-                },
-                "debit": {
-                  "example": "any"
-                },
-                "closing": {
                   "example": "any"
                 }
               }
@@ -1523,7 +1546,7 @@
                 "trans_type": {
                   "example": "any"
                 },
-                "credit_debit": {
+                "cash_debit": {
                   "example": "any"
                 },
                 "bill_no": {
@@ -1535,10 +1558,13 @@
                 "customer_id": {
                   "example": "any"
                 },
-                "discount": {
+                "customer_name_cash": {
                   "example": "any"
                 },
-                "roundoff": {
+                "isGSTBill": {
+                  "example": "any"
+                },
+                "expenses": {
                   "example": "any"
                 },
                 "final_amount": {
@@ -1636,7 +1662,7 @@
                 "trans_type": {
                   "example": "any"
                 },
-                "credit_debit": {
+                "cash_debit": {
                   "example": "any"
                 },
                 "bill_no": {
@@ -1648,10 +1674,13 @@
                 "customer_id": {
                   "example": "any"
                 },
-                "discount": {
+                "customer_name_cash": {
                   "example": "any"
                 },
-                "roundoff": {
+                "isGSTBill": {
+                  "example": "any"
+                },
+                "expenses": {
                   "example": "any"
                 },
                 "final_amount": {
