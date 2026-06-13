@@ -1,6 +1,6 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { fmt, fmtDateShort,fmtDateISO } from "../../utils/format";
+import { fmt, fmtDateShort, fmtDateISO } from "../../utils/format";
 import { C } from "../../utils/theme";
 
 // ─── BUTTON ──────────────────────────────────────────────────────────────────
@@ -238,8 +238,8 @@ export function BalancePill({ value, labels = ["Rec", "Pay"] }) {
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 4,
-      background: isPositive ?  C.greenBg : C.redBg ,
-      color: isPositive ?  C.green : C.red ,
+      background: isPositive ? C.greenBg : C.redBg,
+      color: isPositive ? C.green : C.red,
       border: `1px solid ${isPositive ? C.red : C.green}33`,
       borderRadius: 6, padding: "2px 8px",
       fontSize: 11.5, fontWeight: 700,
@@ -394,25 +394,41 @@ export function DataGrid({
   const [visibleKeys, setVisibleKeys] = useState(columns.map(c => c.key));
   const [colDropOpen, setColDropOpen] = useState(false);
   const [focusedIdx, setFocusedIdx] = useState(null);
+  const [internalLoading, setInternalLoading] = useState(false);
 
   const colDropRef = useRef(null);
   const tableRef = useRef(null);
   const searchDebounce = useRef(null);
   const focusedIdxRef = useRef(null);
+  // Merge with external prop
+  const isLoading = loading || internalLoading;
+
   focusedIdxRef.current = focusedIdx;
+
+  // Wrap onFetch calls to auto-manage loading
+  const doFetch = useCallback(async (params) => {
+    if (!onFetch) return;
+    setInternalLoading(true);
+    try {
+      await onFetch(params);          // onFetch must return a Promise
+    } finally {
+      setInternalLoading(false);
+    }
+  }, [onFetch]);
+
 
   useEffect(() => {
     if (!lazy) return;
-    const params = { page, pageSize, search, sortKey, sortDir };
-    if (onFetch) onFetch(params);
+    doFetch({ page, pageSize, search, sortKey, sortDir });
   }, [page, pageSize, sortKey, sortDir]);
+
 
   useEffect(() => {
     if (!lazy) return;
     clearTimeout(searchDebounce.current);
     searchDebounce.current = setTimeout(() => {
       setPage(1);
-      if (onFetch) onFetch({ page: 1, pageSize, search, sortKey, sortDir });
+      doFetch({ page: 1, pageSize, search, sortKey, sortDir });
     }, 300);
     return () => clearTimeout(searchDebounce.current);
   }, [search]);
@@ -548,6 +564,8 @@ export function DataGrid({
     }
   }, [pageRows, selected, footerButtons, data]);
 
+
+
   useEffect(() => {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
@@ -611,7 +629,7 @@ export function DataGrid({
           {title && <span style={S.titleText}>{title}</span>}
 
           {/* Move header extra here */}
-           {headerExtra && (
+          {headerExtra && (
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {headerExtra}
             </div>
@@ -719,7 +737,7 @@ export function DataGrid({
             </tr>
           </thead>
           <tbody>
-            {loading
+            {isLoading
               ? Array.from({ length: pageSize }).map((_, i) => (
                 <tr key={i}>
                   {selectable && <td style={S.tdCheck}><div style={{ ...S.skeleton, width: 14, height: 14, borderRadius: 3 }} /></td>}

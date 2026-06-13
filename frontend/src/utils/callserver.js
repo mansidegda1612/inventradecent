@@ -7,7 +7,7 @@
  * @returns {Promise}          - Resolves with parsed response, throws on error
  */
 export async function callAPI(url, method, data = null) {
-  const fullUrl = `http://localhost:5000/api/${url}`;
+ const fullUrl = `${import.meta.env.VITE_API_URL}${url}`;
   const token = sessionStorage.getItem("token");
 
   const methodsWithBody = ["POST", "PUT", "PATCH"];
