@@ -56,7 +56,7 @@ router.get("/transactions/", async (req, res) => {
          t.ROUNDOFF,
          t.final_amount,
          t.userid,
-         u.name             AS created_by,
+         ANY_VALUE(u.name)             AS created_by,
          COUNT(ti.id)       AS item_count,
          SUM(ti.CGST)       AS total_cgst,
          SUM(ti.SGST)       AS total_sgst
