@@ -22,7 +22,7 @@ import {
   TransactionSummary,
   TransactionActions,
   ExpenseEntryGrid,
-} from "../components/ui/TransactionComponents";
+} from "../components/ui/Transactioncomponents";
 
 import {
   calcItemAmounts,
