@@ -33,7 +33,7 @@ import {
   DEFAULT_EXPENSES,
   splitGST,
   today,
-} from "../utils/transactionUtils";
+} from "../utils/TransactionUtils";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
