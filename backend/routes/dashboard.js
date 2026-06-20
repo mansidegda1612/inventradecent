@@ -54,7 +54,7 @@ router.get("/dashboard/stats", async (req, res) => {
 
     // Low-stock count — products where c_qty <= 5
     const [[{ lowStockCount }]] = await pool.query(
-      "SELECT COUNT(*) AS lowStockCount FROM product WHERE c_qty <= 5"
+      "SELECT COUNT(*) AS lowStockCount FROM product WHERE c_qty <= lowstockqty"
     );
 
     res.json({
@@ -184,7 +184,7 @@ router.get("/dashboard/low-stock", async (req, res) => {
     const [rows] = await pool.query(
       `SELECT id, name, c_qty
        FROM product
-       WHERE c_qty <= 5
+       WHERE c_qty <= lowstockqty
        ORDER BY c_qty ASC`
     );
     res.json({ success: true, data: rows });

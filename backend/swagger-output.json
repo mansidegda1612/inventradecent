@@ -591,6 +591,9 @@
                 },
                 "o_qty": {
                   "example": "any"
+                },
+                "lowstockqty": {
+                  "example": "any"
                 }
               }
             }
@@ -681,11 +684,6 @@
         ],
         "description": "",
         "parameters": [
-          {
-            "name": "threshold",
-            "in": "query",
-            "type": "string"
-          },
           {
             "name": "authorization",
             "in": "header",
@@ -778,13 +776,7 @@
                 "o_qty": {
                   "example": "any"
                 },
-                "p_qty": {
-                  "example": "any"
-                },
-                "s_qty": {
-                  "example": "any"
-                },
-                "c_qty": {
+                "lowstockqty": {
                   "example": "any"
                 }
               }

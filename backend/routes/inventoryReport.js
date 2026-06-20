@@ -28,8 +28,7 @@ router.use(auth);        // your mysql2/promise pool
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/reports/inventory/current-stock", async (req, res) => {
   try {
-    const LOW_THRESHOLD = 10;
-
+  
     const [rows] = await db.query(`
       SELECT
         p.id,
@@ -42,6 +41,7 @@ router.get("/reports/inventory/current-stock", async (req, res) => {
         p.p_qty,
         p.s_qty,
         p.c_qty,
+        p.lowstockqty,
         ROUND(p.c_qty * p.sale_rate, 2) AS stock_value
       FROM product p
       LEFT JOIN category c ON c.id = p.category
@@ -49,7 +49,7 @@ router.get("/reports/inventory/current-stock", async (req, res) => {
     `);
 
     const totalStockValue = rows.reduce((s, r) => s + Number(r.stock_value || 0), 0);
-    const lowCount        = rows.filter(r => Number(r.c_qty) > 0  && Number(r.c_qty) < LOW_THRESHOLD).length;
+    const lowCount        = rows.filter(r => Number(r.c_qty) > 0  && Number(r.c_qty) < r.lowstockqty).length;
     const outCount        = rows.filter(r => Number(r.c_qty) <= 0).length;
 
     return res.json({
@@ -83,6 +83,7 @@ router.get("/reports/inventory/stock-movement", async (req, res) => {
         c.name  AS category,
         p.o_qty,
         p.c_qty,
+        p.lowstockqty,
 
         -- purchased qty & value in the date range
         COALESCE(
@@ -127,8 +128,7 @@ router.get("/reports/inventory/stock-movement", async (req, res) => {
 //     including out-of-stock items (c_qty <= 0).
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/reports/inventory/low-stock", async (req, res) => {
-  const threshold = parseInt(req.query.threshold) || 10;
-
+  
   try {
     const [rows] = await db.query(`
       SELECT
@@ -137,12 +137,13 @@ router.get("/reports/inventory/low-stock", async (req, res) => {
         c.name  AS category,
         p.barcode,
         p.sale_rate,
-        p.c_qty
+        p.c_qty,
+        p.lowstockqty
       FROM product p
       LEFT JOIN category c ON c.id = p.category
-      WHERE p.c_qty < ?
+      WHERE p.c_qty <= p.lowstockqty
       ORDER BY p.c_qty ASC, p.name ASC
-    `, [threshold]);
+    `);
 
     const lowCount = rows.filter(r => Number(r.c_qty) > 0).length;
     const outCount = rows.filter(r => Number(r.c_qty) <= 0).length;

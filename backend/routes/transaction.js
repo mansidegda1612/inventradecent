@@ -23,7 +23,10 @@ router.get("/transactions/", async (req, res) => {
     let where = "WHERE 1=1";
     const params = [];
 
-    if (search) { where += " AND (t.bill_no LIKE ? OR  ANY_VALUE(IFNULL(c.name ,cc.custname)) LIKE ?)"; params.push(`%${search}%`); params.push(`%${search}%`); }
+    if (search) {
+      where += " AND (t.bill_no LIKE ? OR IFNULL(c.name, cc.CustName) LIKE ?)";
+      params.push(`%${search}%`, `%${search}%`);
+    }
     if (customer_id) { where += " AND t.customer_id = ?"; params.push(customer_id); }
     if (from) { where += " AND DATE(t.date) >= ?"; params.push(from); }
     if (to) { where += " AND DATE(t.date) <= ?"; params.push(to); }
