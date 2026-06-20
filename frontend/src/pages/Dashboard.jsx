@@ -141,7 +141,7 @@ export default function Dashboard({ products, sales, purchases, accounts }) {
                 }}
               >
                 <span style={{ fontSize: 13, color: C.sub }}>{p.name}</span>
-                <Badge color={p.c_qty === 0 ? C.red : C.amber}>{p.c_qty} units</Badge>
+                <Badge color={C.red}>{p.c_qty} units</Badge>
               </div>
             ))
           )}

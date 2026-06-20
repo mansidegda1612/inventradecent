@@ -16,10 +16,10 @@ function defaultTo() {
 }
 
 // ─── small stock-status badge ─────────────────────────────────────────────────
-function StockBadge({ qty }) {
+function StockBadge({ qty, lowstockqty}) {
   const qty_n = Number(qty) || 0;
   if (qty_n <= 0) return <Badge color={C.red}>Out of Stock</Badge>;
-  if (qty_n < 10) return <Badge color={C.amber}>Low Stock</Badge>;
+  if (qty_n <= lowstockqty) return <Badge color={C.amber}>Low Stock</Badge>;
   return <Badge color={C.green}>In Stock</Badge>;
 }
 
@@ -126,12 +126,12 @@ export default function InventoryReports() {
     },
     {
       key: "c_qty", label: "Current Qty",
-      render: v => (
+      render: (_, row) => (
         <span style={{
           fontWeight: 700,
-          color: Number(v) <= 0 ? C.red : Number(v) < 10 ? C.amber : C.green,
+          color: Number(row.c_qty) <= 0 ? C.red : Number(row.c_qty) <= row.lowstockqty ? C.amber : C.green,
         }}>
-          {v}
+          {row.c_qty}
         </span>
       ),
     },
@@ -141,7 +141,7 @@ export default function InventoryReports() {
     // },
     {
       key: "status", label: "Status", sortable: false,
-      render: (_, row) => <StockBadge qty={row.c_qty} />,
+      render: (_, row) => <StockBadge qty={row.c_qty}  lowstockqty={row.lowstockqty}/>,
     },
   ];
 
@@ -212,7 +212,7 @@ export default function InventoryReports() {
     },
     {
       key: "status", label: "Status", sortable: false,
-      render: (_, row) => <StockBadge qty={row.c_qty} />,
+      render: (_, row) => <StockBadge qty={row.c_qty} lowstockqty={row.lowstockqty} />,
     },
   ];
 

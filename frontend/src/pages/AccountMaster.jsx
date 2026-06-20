@@ -1,55 +1,47 @@
-import { useState, useEffect, useRef } from "react";
+/**
+ * AccountMaster
+ *
+ * Full-page screen: DataGrid listing + Add/Edit/Delete via AccountFormModal ref.
+ * Also embeds GroupMaster for inline group management from the Group dropdown.
+ *
+ * When opened from the sidebar menu → shows DataGrid.
+ * AccountFormModal is also importable by other screens (e.g. PurchaseEntry)
+ * as a hidden ref-controlled component — no DataGrid rendered there.
+ */
+
+import { useState, useRef } from "react";
 import { C } from "../utils/theme";
-import { fmt } from "../utils/format";
-import { Btn, Card, Badge, Modal, Field, PageHeader, TableWrap, ToastProvider, ConfirmModal, DataGrid, Dropdown ,BalancePill } from "../components/ui";
+import { Btn, Card, PageHeader, DataGrid, ToastProvider, ConfirmModal, BalancePill } from "../components/ui/index";
 import { callAPI } from "../utils/callserver";
 import GroupMaster from "./GroupMaster";
+import AccountFormModal from "./AccountFormModal";
 
 export default function AccountMaster() {
-
-  const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({ name: "", group: 1, city: "", contact_no: "", gst: "", opening: 0 });
-  const [edit, setEdit] = useState(null);
-  const [focusedData, setfocusedData] = useState({});
-  const [total, setTotal] = useState(0);
-  const [list, setList] = useState([]);
+  const [list, setList]       = useState([]);
+  const [total, setTotal]     = useState(0);
   const [loading, setLoading] = useState(false);
-  const [toasts, setToasts] = useState({ open: false, msg: null, type: null });
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmMsg] = useState("Are You Sure You want to Delete this Account?");
-  const loadModelref = useRef({});
-  const [groupData, setGroupData] = useState({});
-  const groupRef = useRef(null); // ✅ ref to call GroupMaster methods
+  const [toasts, setToasts]   = useState({ open: false, msg: null, type: null });
 
-  // ✅ Called by GroupMaster after any add/edit/delete → re-fetch dropdown
-  const handleGroupSaved = async () => {
-    const res = await callAPI("groups", "GET");
-    if (res.success) setGroupData(res?.data ?? []);
-  };
-
+  const loadModelRef  = useRef({});
+  const accountRef    = useRef(null);  // → AccountFormModal
+  const groupRef      = useRef(null);  // → GroupMaster
 
   const show = (msg, type = "success") => {
-    setToasts({ open: true, msg: msg, type: type });
-    setTimeout(() => {
-      setToasts({ open: false });
-    }, 3000);
+    setToasts({ open: true, msg, type });
+    setTimeout(() => setToasts({ open: false }), 3000);
   };
 
-  // Fetch accounts from API
+  // ── Fetch list (called by DataGrid lazy mode) ─────────────────────────────
   const fetchAccounts = async (loadModel) => {
     try {
-      loadModelref.current = loadModel
-      //console.log(loadModel);
-      let url = "customers";
-      url += `?page=${loadModel.page}`;
-      url += `&limit=${loadModel.pageSize}`;
-      url += loadModel.search ? `&search=${loadModel.search}` : "";
-      //console.log(url);
+      loadModelRef.current = loadModel;
+      let url = `customers?page=${loadModel.page}&limit=${loadModel.pageSize}`;
+      if (loadModel.search) url += `&search=${loadModel.search}`;
       setLoading(true);
       const res = await callAPI(url, "GET");
       if (res.success) {
-        setList(res?.data ?? []);
-        setTotal(res?.pagination?.total ?? 0)
+        setList(res.data ?? []);
+        setTotal(res.pagination?.total ?? 0);
       }
     } catch (err) {
       console.error("Error fetching accounts:", err);
@@ -58,230 +50,83 @@ export default function AccountMaster() {
     }
   };
 
-  // Open modal for add/edit
-  const open = async (a) => {
-    const res = await callAPI("groups", "GET");
-    if (res.success)
-      setGroupData(res?.data ?? []);
-    if (a) {
-      setForm({
-        name: a.name || "",
-        group: a.group || 1,
-        city: a.city || "",
-        contact_no: a.contact_no || "",
-        gst: a.gstin || "",
-        opening: Math.abs(a.opening) || 0,
-        RecPay : a.opening < 0 ? "D" : "C" 
-      });
-      setEdit(a.id);
-    } else {
-      setForm({ name: "", group: 1, city: "", contact_no: "", gst: "", opening: 0  ,RecPay : "C" });
-      setEdit(null);
-    }
-    setModal(true);
+  // ── Called by AccountFormModal after any save/delete ──────────────────────
+  const handleAccountSaved = async () => {
+    await fetchAccounts(loadModelRef.current);
   };
 
-  // Save account (Create or Update)
-  const save = async () => {
-    if (!form.name) {
-      show("Name is required!", "error");
-      return;
-    }
-
-    const model = {
-      name: form.name,
-      contact_no: form.contact_no,
-      city: form.city,
-      gstin: form.gst,
-      group: form.group,
-      address: form.city || "N/A",
-      opening: Number(form.RecPay == "D" ? (form.opening )*(-1) :  form.opening) || 0,
-    };
-
-    try {
-      setLoading(true);
-
-      let res;
-      if (edit) {
-        // Update existing account
-        res = await callAPI(`customers/${edit}`, "PUT", model);
-        console.log("Update response:", res);
-      } else {
-        // Create new account
-        res = await callAPI("customers", "POST", model);
-        console.log("Create response:", res);
-      }
-      show(res.message, res.success ? "success" : "error");
-      if (res.success) {
-        setModal(false);
-        await fetchAccounts(loadModelref.current); // Refresh the grid
-      }
-    } catch (err) {
-      show(`Error ${edit ? 'updating' : 'creating'} account`, "error");
-    } finally {
-      setLoading(false);
-    }
+  // ── Called by GroupMaster after group changes (refreshes group dropdown) ──
+  const handleGroupSaved = async () => {
+    // AccountFormModal re-fetches groups when it opens, so nothing extra needed here.
+    // But if you have a group column in the grid you may want to refresh:
+    await fetchAccounts(loadModelRef.current);
   };
 
-  // Delete account
-  const deleteAccount = async (confirm, data) => {
-    setfocusedData(data);
-    if (!confirm)
-      setConfirmOpen(true)//"Are you sure you want to delete this account?");
-    else {
-      try {
-        setLoading(true);
-        const res = await callAPI(`customers/${focusedData.id}`, "DELETE");
-
-        show(res.message, res.success ? "success" : "error");
-        if (res.success) {
-          await fetchAccounts(loadModelref.current); // Refresh the grid
-        }
-      } catch (err) {
-        show("Error deleting account", "error");
-      } finally {
-        setLoading(false);
-        setConfirmOpen(false);
-      }
-    }
-  };
-
-
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div>
       <PageHeader
         title="Account Master"
         sub="Manage customers and suppliers."
-      // action={<Btn onClick={() => open(null)}>+ Add Account</Btn>}
       />
-
 
       <Card noPad>
         <DataGrid
           title=""
           columns={[
             {
-              key: "name", label: "Name", render: (value, row) => {
-                return <span style={{ fontWeight: 600, color: C.text }}>{value}</span>
-              }
+              key: "name", label: "Name",
+              render: (v) => <span style={{ fontWeight: 600, color: C.text }}>{v}</span>,
             },
-            { key: "group_name", label: "Group" },
-            { key: "city", label: "City" },
-            { key: "gstin", label: "GST No." },
-            { key: "contact_no", label: "Contact No" },
-            { key: "opening", label: "Opening Balance",  render: v => <BalancePill value={v} />,},
-
+            { key: "group_name",  label: "Group" },
+            { key: "city",        label: "City" },
+            { key: "gstin",       label: "GST No." },
+            { key: "contact_no",  label: "Contact No" },
+            {
+              key: "opening", label: "Opening Balance",
+              render: (v) => <BalancePill value={v} />,
+            },
           ]}
-          data={list}          // each item must have an `id` field
-          lazy={true}
+          data={list}
+          lazy
           total={total}
-          // selectable={true}
-          onFetch={(loadModel) => { fetchAccounts(loadModel); }}
+          loading={loading}
+          onFetch={fetchAccounts}
           HeaderButtons={[
             {
-              key: "Add", label: "Add Account", icon: "+", variant: "primary", hotkey: "ctrl+a",
-              onClick: (ids, all, focused) => open(null)
+              key: "Add", label: "Add Account", icon: "+",
+              variant: "primary", hotkey: "ctrl+a",
+              onClick: () => accountRef.current?.openAdd(),
             },
           ]}
           footerButtons={[
             {
               key: "edit", label: "Edit", icon: "⬇", hotkey: "ctrl+e",
-              onClick: (ids, all, focused) => open(focused)
+              onClick: (ids, all, focused) => accountRef.current?.openEdit(focused),
             },
             {
               key: "del", label: "Delete", icon: "🗑", variant: "danger", hotkey: "ctrl+d",
-              onClick: (ids, all, focused) => deleteAccount(false, focused)
+              onClick: (ids, all, focused) => accountRef.current?.openDelete(focused),
             },
-          ]} />
+          ]}
+        />
       </Card>
 
-      <Modal open={modal} onClose={() => setModal(false)} title={edit ? "Edit Account" : "Add Account"}>
-        <Field label="Name" required>
-          <input autoFocus value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-        </Field>
-        <div className="form-grid-2">
-          <Field label="Group">
-            <Dropdown
-              value={form.group}
-              onChange={(v, opt) => { setForm({ ...form, group: v }) }}
-              clearable
-              options={groupData}
-              footerButtons={[
-                // ✅ These now call GroupMaster methods via ref
-                {
-                  icon: "+", label: "Add", hotkey: "ctrl+a",
-                  onClick: () => groupRef.current?.openAdd()
-                },
-                {
-                  icon: "⬇", label: "Edit", hotkey: "ctrl+e",
-                  onClick: (idx, focused) => {
-                    if (!focused) return;
-                    groupRef.current?.openEdit(focused);
-                  }
-                },
-                {
-                  icon: "🗑", label: "Delete", hotkey: "ctrl+d",
-                  onClick: (idx, focused) => {
-                    if (!focused) return;
-                    groupRef.current?.openDelete(focused);
-                  }
-                },
-              ]}
-            />
-          </Field>
-          <Field label="City">
-            <input value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} />
-          </Field>
-        </div>
-        <Field label="Contact Number">
-          <input value={form.contact_no} onChange={e => setForm({ ...form, contact_no: e.target.value })}
-            onKeyDown={(e) => {
-              const allowed = ["Backspace", "Delete", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Tab", "Enter"];
-              if (allowed.includes(e.key)) return;
-              if (e.key === "-") { e.preventDefault(); return; }
-              // count only digit characters (ignore existing decimal point)
-              const digits = e.target.value.replace(/[^0-9]/g, "");
-              if (digits.length >= 10) e.preventDefault();
-            }
-            } />
-        </Field>
-        <Field label="GST Number">
-          <input value={form.gst} onChange={e => setForm({ ...form, gst: e.target.value })} placeholder="e.g. 24AAJCM3827R1ZW" />
-        </Field>
-          <div className="form-grid-2">
-        <Field label="Opening Balance (₹)">
-          <input type="number" value={form.opening} onChange={e => setForm({ ...form, opening: e.target.value })} />
-        </Field>
-        <Field label="Rec/Pay">
-           <Dropdown
-              value={form.RecPay}
-              onChange={(v, opt) => { setForm({ ...form, RecPay: v }) }}
-              options={[{ id: 'C', name: "Receivable" }, { id: 'D', name: "Payable" }]}
-            />
-        </Field>
-        </div>
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <Btn variant="ghost" onClick={() => setModal(false)}>Cancel</Btn>
-          <Btn onClick={save} disabled={loading}>
-            {loading ? "Saving..." : "Save"}
-          </Btn>
-        </div>
-      </Modal>
+      {/*
+        AccountFormModal: invisible until openAdd/openEdit/openDelete is called.
+        onSaved refreshes the grid.
+        groupRef lets AccountFormModal manage groups inline from its Group dropdown.
+      */}
+      <AccountFormModal
+        ref={accountRef}
+        onSaved={handleAccountSaved}
+        groupRef={groupRef}   // pass down so the dropdown footer buttons work
+      />
 
-
-      {/* ✅ Render GroupMaster anywhere — it only renders modals, no visible UI */}
+      {/* GroupMaster: invisible, manages group CRUD via ref */}
       <GroupMaster ref={groupRef} onSaved={handleGroupSaved} />
 
-
-      <ToastProvider open={toasts.open} msg={toasts.msg} type={toasts.type} >
-      </ToastProvider>
-
-      <ConfirmModal
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
-        onConfirm={() => { deleteAccount(true) }}
-        message={confirmMsg}
-      />
+      <ToastProvider open={toasts.open} msg={toasts.msg} type={toasts.type} />
     </div>
   );
 }

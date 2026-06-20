@@ -86,7 +86,7 @@ export function Modal({ open, onClose, title, children, width = 560 }) {
         // Tall modals: fall back to top-align so they stay scrollable
         ...(window.innerHeight < 600 && { alignItems: "flex-start" })
       }}
-      onClick={e => e.target === e.currentTarget && onClose()}
+      //onClick={e => e.target === e.currentTarget && onClose()}
     >
       <div style={{ background: C.card, borderRadius: 18, border: `1px solid ${C.border}`, width: "100%", maxWidth: width, boxShadow: "0 20px 60px #00000025", marginTop: 20, marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 22px", borderBottom: `1px solid ${C.border}` }}>
@@ -400,6 +400,10 @@ export function DataGrid({
   const tableRef = useRef(null);
   const searchDebounce = useRef(null);
   const focusedIdxRef = useRef(null);
+  const isMounted = useRef(false);
+  const prevSearch = useRef(search);
+
+
   // Merge with external prop
   const isLoading = loading || internalLoading;
 
@@ -417,23 +421,32 @@ export function DataGrid({
   }, [onFetch]);
 
 
-  useEffect(() => {
-    if (!lazy) return;
-    doFetch({ page, pageSize, search, sortKey, sortDir });
-  }, [page, pageSize, sortKey, sortDir]);
+useEffect(() => {
+  if (!lazy) {
+    // client-side: reset page when filters change
+    setPage(1);
+    return;
+  }
 
+  const searchChanged = search !== prevSearch.current;
+  prevSearch.current = search;
 
-  useEffect(() => {
-    if (!lazy) return;
+  if (searchChanged) {
+    // debounce search, reset to page 1
     clearTimeout(searchDebounce.current);
     searchDebounce.current = setTimeout(() => {
       setPage(1);
       doFetch({ page: 1, pageSize, search, sortKey, sortDir });
     }, 300);
     return () => clearTimeout(searchDebounce.current);
-  }, [search]);
+  }
 
-  useEffect(() => { if (!lazy) setPage(1); }, [search, sortKey, sortDir, pageSize, lazy]);
+  // page/pageSize/sort changed — fetch immediately
+  doFetch({ page, pageSize, search, sortKey, sortDir });
+
+}, [lazy, page, pageSize, search, sortKey, sortDir]);
+
+
   useEffect(() => { setFocusedIdx(null); }, [page]);
 
   useEffect(() => {

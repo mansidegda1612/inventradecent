@@ -23,6 +23,7 @@ export function TransactionHeader({
   customers = [],
   onCustomerChange,
   onCustomerNameChange,
+  accountFormRef
 }) {
   return (
     <div className="tr-header">
@@ -64,6 +65,30 @@ export function TransactionHeader({
                 options={customers}
                 placeholder={type === "PI" ? "Select Supplier…": "Select customer…"}
                 clearable
+                footerButtons={[            // ← ADD THIS
+                  {
+                    icon: "+",
+                    label: "Add",
+                    hotkey: "ctrl+a",
+                    onClick: () => accountFormRef?.current?.openAdd(),
+                  },
+                  {
+                    icon: "⬇",
+                    label: "Edit",
+                    hotkey: "ctrl+e",
+                    onClick: (idx, focused) => {
+                      if (focused) accountFormRef?.current?.openEdit(focused);
+                    },
+                  },
+                  {
+                    icon: "🗑",
+                    label: "Delete",
+                    hotkey: "ctrl+d",
+                    onClick: (idx, focused) => {
+                      if (focused) accountFormRef?.current?.openDelete(focused);
+                    },
+                  },
+                ]}
               />
             </div>
           ) : (
@@ -431,7 +456,6 @@ export function ExpenseEntryGrid({ expenses, onExpenseUpdate }) {
                         expenses.findIndex(e2 => e2.key === exp.key),
                         "pct", e.target.value
                       )}
-                      placeholder="0.0"
                     />
                     <span className="tr-exp-unit">%</span>
                   </div>
@@ -445,7 +469,7 @@ export function ExpenseEntryGrid({ expenses, onExpenseUpdate }) {
                       expenses.findIndex(e2 => e2.key === exp.key),
                       "amount", e.target.value
                     )}
-                    placeholder="0.00"
+                    
                   />
                 </td>
               </tr>

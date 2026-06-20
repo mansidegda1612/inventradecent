@@ -236,7 +236,7 @@ export default function FinancialReports() {
                 color={C.green} bg={C.greenBg}
               />
               <StatPill
-                icon={pl.net_profit >= 0 ? "📈" : "📉"} label="Net Profit"
+                icon={pl.net_profit >= 0 ? "📈" : "📉"} label= {pl.net_profit >= 0 ?"Net Profit" : "Net Loss"}
                 value={fmt(Math.abs(pl.net_profit ?? 0))}
                 color={pl.net_profit >= 0 ? C.green : C.red}
                 bg={pl.net_profit >= 0 ? C.greenBg : C.redBg}
@@ -262,14 +262,14 @@ export default function FinancialReports() {
                 <Row label="Output GST (Collected)"  value={pl.sales_gst}    color={C.amber} />
                 <Row label="Input GST (Paid)"         value={pl.purchase_gst} color={C.amber} />
                 <Row
-                  label="Net GST Payable"
+                  label={(pl.sales_gst||0) - (pl.purchase_gst||0) >= 0 ? "Net GST Payable" : "Net GST Receivable"}
                   value={(pl.sales_gst||0) - (pl.purchase_gst||0)}
                   color={(pl.sales_gst||0) - (pl.purchase_gst||0) >= 0 ? C.red : C.green}
                   bold
                 />
 
                 <div style={{ marginTop: 14 }}>
-                  <NetBox label="Gross Profit" value={pl.gross_profit} />
+                  <NetBox label={pl.gross_profit > 0 ? "Gross Profit": "Gross Loss"} value={pl.gross_profit} />
                 </div>
               </Card>
 

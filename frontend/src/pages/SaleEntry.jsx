@@ -35,6 +35,9 @@ import {
   today,
 } from "../utils/TransactionUtils";
 
+import ProductFormModal from "./ProductFormModal";
+import AccountFormModal from "./AccountFormModal";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,7 +58,10 @@ export default function SaleEntry() {
   const [barInput, setBarInput] = useState("");
   const [productSearch, setProductSearch] = useState("");
   const barRef = useRef(null);
-  const qtyFocusRef = useRef(null); // will hold a fn: (index) => void
+  const qtyFocusRef = useRef(null); 
+  const productFormRef = useRef(null);
+  const accountRef = useRef(null);
+
 
   const [toasts, setToasts] = useState({ open: false, msg: null, type: null });
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -68,6 +74,19 @@ export default function SaleEntry() {
   const show = (msg, type = "success") => {
     setToasts({ open: true, msg, type });
     setTimeout(() => setToasts({ open: false }), 3000);
+  };
+
+  // handle product add . edit delete
+  const handleProductSaved = async (action, savedRow) => {
+    // Re-fetch products for the dropdown
+    const res = await callAPI("products", "GET");
+    if (res.success) setProducts(res.data ?? []);
+  };
+
+  // handle account add . edit delete
+  const handleAccountSaved = async () => {
+    const res = await callAPI("customers", "GET");
+    if (res.success) setCustomers(res.data ?? []);
   };
 
   // ── fetch list ────────────────────────────────────────────────────────────
@@ -180,7 +199,7 @@ export default function SaleEntry() {
       const updated = [...f.items];
       const item = { ...updated[index] };
       if (field === "qty" || field === "rate" || field === "cgst_pct" || field === "sgst_pct") {
-        item[field] = parseFloat(value) || 0;
+        item[field] = parseFloat(value);
         const amounts = calcItemAmounts(item, f.isGSTBill); // pass isGSTBill
         updated[index] = { ...item, ...amounts };
       }
@@ -227,18 +246,18 @@ export default function SaleEntry() {
       date: form.date,
       customer_id: form.cash_debit === "D" ? form.customer_id : 0,
       customer_name_cash: form.customer_name_cash,
-      discount: form.discount || 0,
+      discount: parseFloat(form.discount) || 0,
       roundoff: parseFloat(totals.roundoff) || 0,
-      final_amount: totals.final,
+      final_amount: parseFloat(totals.final),
       isGSTBill: form.isGSTBill ? 1 : 0,
       expenses: form.expenses,
       items: form.items.map((i) => ({
         product_id: i.product_id,
-        qty: i.qty,
-        rate: i.rate,
-        taxable_amount: i.taxable_amount,
-        CGST: i.CGST,
-        SGST: i.SGST,
+        qty: parseFloat(i.qty),
+        rate: parseFloat(i.rate),
+        taxable_amount: parseFloat(i.taxable_amount),
+        CGST: parseFloat(i.CGST),
+        SGST: parseFloat(i.SGST),
       })),
     };
 
@@ -317,10 +336,10 @@ export default function SaleEntry() {
       const exp = { ...updated[index] };
       const subtotal = f.items.reduce((s, i) => s + (i.taxable_amount || 0), 0);
       if (field === "pct") {
-        exp.pct = parseFloat(value) || 0;
+        exp.pct = parseFloat(value);
         exp.amount = calcExpenseFromPercentage(subtotal, exp.pct);
       } else if (field === "amount") {
-        exp.amount = parseFloat(value) || 0;
+        exp.amount = parseFloat(value) ;
         exp.pct = calcPercentageFromExpense(subtotal, exp.amount);
       }
       updated[index] = exp;
@@ -422,6 +441,7 @@ export default function SaleEntry() {
             customers={customers}
             onCustomerChange={(v) => setForm({ ...form, customer_id: v })}
             onCustomerNameChange={(v) => setForm({ ...form, customer_name_cash: v })}
+            accountFormRef={accountRef}
           />
 
           {/* ── TOOLBAR: Barcode + Product Search (full width) + Chips ───── */}
@@ -450,6 +470,30 @@ export default function SaleEntry() {
                 clearable
                 options={products}
                 onChange={(e, opt) => addProduct(opt)}
+                                footerButtons={[
+                  {
+                    icon: "+",
+                    label: "Add",
+                    hotkey: "ctrl+a",
+                    onClick: () => productFormRef.current?.openAdd(),
+                  },
+                  {
+                    icon: "⬇",
+                    label: "Edit",
+                    hotkey: "ctrl+e",
+                    onClick: (idx, focused) => {
+                      if (focused) productFormRef.current?.openEdit(focused);
+                    },
+                  },
+                  {
+                    icon: "🗑",
+                    label: "Delete",
+                    hotkey: "ctrl+d",
+                    onClick: (idx, focused) => {
+                      if (focused) productFormRef.current?.openDelete(focused);
+                    },
+                  },
+                ]}
               />
             </div>
 
@@ -505,6 +549,14 @@ export default function SaleEntry() {
 
         </div>
       </Modal>
+
+      
+      {/* ── account master referance ── */}
+      <AccountFormModal ref={accountRef} onSaved={handleAccountSaved} />
+
+       {/* ── product master referance ── */}
+      <ProductFormModal ref={productFormRef} onSaved={handleProductSaved} />
+
 
       {/* ── Toasts ── */}
       <ToastProvider open={toasts.open} msg={toasts.msg} type={toasts.type} />
