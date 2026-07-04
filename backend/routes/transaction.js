@@ -49,9 +49,10 @@ router.get("/transactions/", async (req, res) => {
       `SELECT
          t.id               AS transaction_id,
          t.trans_type,
-         t.cash_debit,
+         t.cash_debit AS cord,
+         IF(t.cash_debit = "C" ,"Cash" , "Debit") AS cash_debit,
          t.bill_no,
-         t.date,
+         t.date, 
          t.customer_id,
         ANY_VALUE(IFNULL(c.name ,cc.custname))            AS customer_name,
          t.taxable_amount,
@@ -147,7 +148,8 @@ router.get("/transactions/:transaction_id", async (req, res) => {
       `SELECT
          ti.*,
          p.name     AS product_name,
-         p.hsn_code
+         p.hsn_code,
+         p.gstPer
        FROM transaction_items ti
        LEFT JOIN product p ON ti.product_id = p.id
        WHERE ti.transaction_id = ?
@@ -470,7 +472,7 @@ router.put("/transactions/:transaction_id", async (req, res) => {
 
     await conn.commit();
     conn.release();
-    res.json({ success: true, message: "Transaction updated" });
+    res.json({ success: true, message: "Transaction updated" , data: { "transaction_id" : req.params.transaction_id }, });
   } catch (e) {
     await conn.rollback();
     conn.release();

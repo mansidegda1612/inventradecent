@@ -37,6 +37,7 @@ app.use("/api/",  require("./routes/dashboard"));
 app.use("/api/",  require("./routes/accountReports"));
 app.use("/api/",  require("./routes/inventoryReport"));
 app.use("/api/",  require("./routes/balanceSheet"));
+app.use("/api/" , require("./routes/whatsappRoutes"));
 
 // ─── Health Check ─────────────────────────────────────────────────────────
 app.get("/", (req, res) => res.json({ success: true, message: "API running" }));
