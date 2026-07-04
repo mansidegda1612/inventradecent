@@ -1,7 +1,8 @@
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback , forwardRef ,useImperativeHandle } from "react";
 import { fmt, fmtDateShort, fmtDateISO } from "../../utils/format";
 import { C } from "../../utils/theme";
+import * as XLSX from 'xlsx';
 
 // ─── BUTTON ──────────────────────────────────────────────────────────────────
 export function Btn({ children, onClick, variant = "primary", small, danger, style: s, disabled, autoFocus }) {
@@ -86,7 +87,7 @@ export function Modal({ open, onClose, title, children, width = 560 }) {
         // Tall modals: fall back to top-align so they stay scrollable
         ...(window.innerHeight < 600 && { alignItems: "flex-start" })
       }}
-      //onClick={e => e.target === e.currentTarget && onClose()}
+    //onClick={e => e.target === e.currentTarget && onClose()}
     >
       <div style={{ background: C.card, borderRadius: 18, border: `1px solid ${C.border}`, width: "100%", maxWidth: width, boxShadow: "0 20px 60px #00000025", marginTop: 20, marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 22px", borderBottom: `1px solid ${C.border}` }}>
@@ -253,118 +254,51 @@ export function BalancePill({ value, labels = ["Rec", "Pay"] }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
-//  DataGrid 
-//
-//  
-//    • Row focus  — click a row or use ↑ / ↓  arrow keys to move focus
-//    • focusedRow — the full row object of the currently focused row is passed
-//                   to every footer-button onClick as the 3rd argument
-//    • Enter key  — toggles checkbox selection on the focused row
-//    • Hotkeys    — bind a key combo to any footer button via `hotkey`
-//    • Lazy mode  — when `lazy={true}` the parent owns data fetching;
-//                   DataGrid calls `onFetch({ page, pageSize, search, sortKey, sortDir })`
-//                   on every change and uses `total` prop for pagination maths.
-//                   When `lazy={false}` (default) full client-side filter/sort/page.
-//
-//  ── PROPS ───────────────────────────────────────────────────────────────────
-//
-//  title          string          header title
-//  columns        Column[]        column definitions (see below)
-//  data           Row[]           rows — MUST have a unique `id` field on each row
-//  pageSize       number          initial rows per page  (default 10)
-//  selectable     boolean         show row checkboxes    (default false)
-//  footerButtons  FooterBtn[]     action buttons in footer
-//  loading        boolean         show shimmer skeleton
-//  emptyText      string          custom empty message
-//
-//  ── LAZY MODE ───────────────────────────────────────────────────────────────
-//  lazy           boolean         enable server-side mode  (default false)
-//  total          number          total record count returned by API  (lazy only)
-//  onFetch        function        called with { page, pageSize, search, sortKey, sortDir }
-//                                 whenever any of those change  (lazy only)
-//                                 → debounced 300ms on search
-//
-//  ── COLUMN ──────────────────────────────────────────────────────────────────
-//  {
-//    key:      string
-//    label:    string
-//    sortable: boolean                         default true
-//    width:    string | number
-//    render:   (value, row) => ReactNode
-//  }
-//
-//  ── FOOTER BUTTON ───────────────────────────────────────────────────────────
-//  {
-//    key:     string
-//    label:   string
-//    icon:    string                           emoji / text icon
-//    variant: "primary" | "danger" | ""
-//    hotkey:  string                           e.g. "F2", "ctrl+d", "alt+e"
-//             supported modifiers: ctrl, alt, shift  (case-insensitive)
-//    onClick: (selectedIds, allData, focusedRow) => void
-//                         ↑ selectedIds = checkbox-selected row ids (string[])
-//                         ↑ allData     = full data array (lazy: current page data)
-//                         ↑ focusedRow  = the currently keyboard/click focused row
-//  }
-//
-//  ── EXAMPLE ─────────────────────────────────────────────────────────────────
-//
-//  /* CLIENT-SIDE (lazy=false, default) */
-//  <DataGrid
-//    title="Invoices"
-//    columns={cols}
-//    data={allInvoices}
-//    pageSize={15}
-//    selectable
-//    footerButtons={[
-//      { key: "edit",   label: "Edit",   icon: "✏️", hotkey: "F2",
-//        onClick: (ids, all, focused) => openEdit(focused ?? all.find(r => ids[0] === r.id)) },
-//      { key: "delete", label: "Delete", icon: "🗑", variant: "danger", hotkey: "ctrl+d",
-//        onClick: (ids) => handleDelete(ids) },
-//    ]}
-//  />
-//
-//  /* SERVER-SIDE (lazy=true) */
-//  const [rows, setRows]   = useState([]);
-//  const [total, setTotal] = useState(0);
-//  const [loading, setLoading] = useState(false);
-//
-//  const handleFetch = async ({ page, pageSize, search, sortKey, sortDir }) => {
-//    setLoading(true);
-//    const res = await api.getInvoices({ page, pageSize, search, sortKey, sortDir });
-//    setRows(res.data);
-//    setTotal(res.total);
-//    setLoading(false);
-//  };
-//
-//  <DataGrid
-//    title="Invoices"
-//    columns={cols}
-//    data={rows}
-//    total={total}
-//    loading={loading}
-//    lazy
-//    onFetch={handleFetch}
-//    pageSize={15}
-//  />
-// ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
-//  DataGrid 
-//
-//  UNCHANGED from original except two new optional props:
-//    • headerExtra  — ReactNode rendered on the right side of the toolbar
-//    • footerExtra  — ReactNode rendered on the left side of the footer (before buttons)
-//
-//  All existing props, behaviour and styling are identical.
-//  Any existing usages that do NOT pass these props are unaffected.
-//
-//  ── NEW PROPS ────────────────────────────────────────────────────────────────
-//  headerExtra    ReactNode    extra content shown right-side in toolbar
-//  footerExtra    ReactNode    extra content shown left-side in footer
-//
-// ─────────────────────────────────────────────────────────────────────────────
+
+/** Returns { from, to } for the current Indian financial year (Apr 1 – Mar 31). */
+function currentFinancialYear() {
+  const now = new Date();
+  const y = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  return {
+    from: fmtDateISO(new Date(y, 3, 1)),   // Apr 1
+    to: fmtDateISO(new Date(y + 1, 2, 31)), // Mar 31
+  };
+}
+
+/** Very small XLSX writer – no dependency needed.
+ *  Produces a proper .xlsx file from an array of objects.
+ */
+function exportToExcel(rows, columns, filename = "export.xlsx") {
+  // Build array of row objects
+  const header = columns.reduce((acc, c) => {
+    acc[c.key] = c.label;
+    return acc;
+  }, {});
+
+  const data = rows.map(row =>
+    columns.reduce((acc, c) => {
+      acc[c.key] = c.exportValue ? c.exportValue(row[c.key], row) : (row[c.key] ?? "");
+      return acc;
+    }, {})
+  );
+
+  // Create worksheet with header row first
+  const ws = XLSX.utils.json_to_sheet([header, ...data], { skipHeader: true });
+
+  // Bold the header row
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let C = range.s.c; C <= range.e.c; C++) {
+    const cellAddr = XLSX.utils.encode_cell({ r: 0, c: C });
+    if (ws[cellAddr]) {
+      ws[cellAddr].s = { font: { bold: true }, fill: { fgColor: { rgb: "E8EEF7" } } };
+    }
+  }
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+  XLSX.writeFile(wb, filename);
+}
+
 
 export function DataGrid({
   title,
@@ -380,75 +314,90 @@ export function DataGrid({
   lazy = false,
   total: lazyTotal = 0,
   onFetch,
-  // ── NEW ──────────────────────────────────────────────────────────────────
-  headerExtra = null,   // ReactNode: rendered in toolbar row (right side)
-  footerExtra = null,   // ReactNode: rendered in footer row (left side, before buttons)
+  // date filter
+  dateFilter = false,
+  // slots
+  headerExtra = null,
+  footerExtra = null,
+  // excel export filename
+  exportFilename = "export.xlsx",
 }) {
-  // ── STATE ──────────────────────────────────────────────────────────────────
+  // ── financial year defaults ───────────────────────────────────────────────
+  const fyDefault = useMemo(() => currentFinancialYear(), []);
+
+  // ── state ─────────────────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState("asc");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(() => initialPageSize ? initialPageSize : Math.max(5, Math.floor((window.innerHeight - 220) / 45)));
+  const [pageSize, setPageSize] = useState(
+    () => initialPageSize ?? Math.max(5, Math.floor((window.innerHeight - 220) / 45))
+  );
   const [selected, setSelected] = useState(new Set());
-  const [visibleKeys, setVisibleKeys] = useState(columns.map(c => c.key));
+  const [visibleKeys, setVisibleKeys] = useState(
+    () => columns.filter(c => (c.visibleIn ?? "both") !== "excel").map(c => c.key)
+  );
   const [colDropOpen, setColDropOpen] = useState(false);
   const [focusedIdx, setFocusedIdx] = useState(null);
   const [internalLoading, setInternalLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+
+  // date range
+  const [dateFrom, setDateFrom] = useState(fyDefault.from);
+  const [dateTo, setDateTo] = useState(fyDefault.to);
 
   const colDropRef = useRef(null);
   const tableRef = useRef(null);
   const searchDebounce = useRef(null);
   const focusedIdxRef = useRef(null);
-  const isMounted = useRef(false);
   const prevSearch = useRef(search);
+  const prevDateFrom = useRef(dateFrom);
+  const prevDateTo = useRef(dateTo);
 
-
-  // Merge with external prop
   const isLoading = loading || internalLoading;
-
   focusedIdxRef.current = focusedIdx;
 
-  // Wrap onFetch calls to auto-manage loading
+  // ── fetch helper ──────────────────────────────────────────────────────────
+  const buildParams = useCallback((overrides = {}) => ({
+    page, pageSize, search, sortKey, sortDir,
+    ...(dateFilter ? { dateFrom, dateTo } : {}),
+    ...overrides,
+  }), [page, pageSize, search, sortKey, sortDir, dateFilter, dateFrom, dateTo]);
+
   const doFetch = useCallback(async (params) => {
     if (!onFetch) return;
     setInternalLoading(true);
-    try {
-      await onFetch(params);          // onFetch must return a Promise
-    } finally {
-      setInternalLoading(false);
-    }
+    try { await onFetch(params); }
+    finally { setInternalLoading(false); }
   }, [onFetch]);
 
+  // ── lazy fetch effect ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!lazy) { setPage(1); return; }
 
-useEffect(() => {
-  if (!lazy) {
-    // client-side: reset page when filters change
-    setPage(1);
-    return;
-  }
+    const searchChanged = search !== prevSearch.current;
+    const dateFromChanged = dateFrom !== prevDateFrom.current;
+    const dateToChanged = dateTo !== prevDateTo.current;
 
-  const searchChanged = search !== prevSearch.current;
-  prevSearch.current = search;
+    prevSearch.current = search;
+    prevDateFrom.current = dateFrom;
+    prevDateTo.current = dateTo;
 
-  if (searchChanged) {
-    // debounce search, reset to page 1
-    clearTimeout(searchDebounce.current);
-    searchDebounce.current = setTimeout(() => {
-      setPage(1);
-      doFetch({ page: 1, pageSize, search, sortKey, sortDir });
-    }, 300);
-    return () => clearTimeout(searchDebounce.current);
-  }
+    if (searchChanged || dateFromChanged || dateToChanged) {
+      clearTimeout(searchDebounce.current);
+      searchDebounce.current = setTimeout(() => {
+        setPage(1);
+        doFetch(buildParams({ page: 1 }));
+      }, 300);
+      return () => clearTimeout(searchDebounce.current);
+    }
 
-  // page/pageSize/sort changed — fetch immediately
-  doFetch({ page, pageSize, search, sortKey, sortDir });
-
-}, [lazy, page, pageSize, search, sortKey, sortDir]);
-
+    doFetch(buildParams());
+  }, [lazy, page, pageSize, search, sortKey, sortDir, dateFrom, dateTo]);
 
   useEffect(() => { setFocusedIdx(null); }, [page]);
 
+  // close col-dropdown on outside click
   useEffect(() => {
     const h = e => {
       if (colDropRef.current && !colDropRef.current.contains(e.target))
@@ -458,12 +407,12 @@ useEffect(() => {
     return () => document.removeEventListener("mousedown", h);
   }, []);
 
+  // ── client-side filter / sort ─────────────────────────────────────────────
   const filtered = useMemo(() => {
     if (lazy) return data;
     const q = search.toLowerCase();
-    if (!q) return data;
     return data.filter(row =>
-      Object.values(row).some(v => String(v ?? "").toLowerCase().includes(q))
+      !q || Object.values(row).some(v => String(v ?? "").toLowerCase().includes(q))
     );
   }, [data, search, lazy]);
 
@@ -482,38 +431,62 @@ useEffect(() => {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, totalPages);
   const pageRows = lazy ? data : sorted.slice((safePage - 1) * pageSize, safePage * pageSize);
-  const visibleCols = columns.filter(c => visibleKeys.includes(c.key));
+
+  // columns split by visibleIn
+  const gridCols = columns.filter(c => (c.visibleIn ?? "both") !== "excel");
+  const excelCols = columns.filter(c => (c.visibleIn ?? "both") !== "grid");
+  const visibleCols = gridCols.filter(c => visibleKeys.includes(c.key));
+
   const from = Math.min((safePage - 1) * pageSize + 1, total);
   const to = Math.min(safePage * pageSize, total);
 
   const focusedRow = focusedIdx !== null ? pageRows[focusedIdx] ?? null : null;
-
   const allPageSelected =
     pageRows.length > 0 && pageRows.every(r => selected.has(r.id));
 
+  // ── actions ───────────────────────────────────────────────────────────────
   const toggleAll = () => {
     const next = new Set(selected);
     pageRows.forEach(r => (allPageSelected ? next.delete(r.id) : next.add(r.id)));
     setSelected(next);
   };
-
   const toggleRow = id => {
     const next = new Set(selected);
     next.has(id) ? next.delete(id) : next.add(id);
     setSelected(next);
   };
-
   const handleSort = key => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("asc"); }
   };
-
   const toggleCol = key => {
     setVisibleKeys(prev =>
       prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
     );
   };
 
+  // ── excel export ──────────────────────────────────────────────────────────
+  const handleExport = useCallback(async () => {
+  setExportLoading(true);
+  try {
+    let rows;
+    if (lazy) {
+      if (onFetch) {
+        const params = buildParams({ page: 1, pageSize: 999999, exportAll: true });
+        let res = await onFetch(params);
+        rows = res; // parent must have updated `data` by now
+      } else {
+        rows = [];
+      }
+    } else {
+      rows = sorted;
+    }
+    await exportToExcel(rows, excelCols, exportFilename);
+  } finally {
+    setExportLoading(false);
+  }
+}, [lazy, sorted, data, excelCols, onFetch, buildParams, exportFilename]);
+  // ── page number list ──────────────────────────────────────────────────────
   const pageNums = [];
   for (let i = 1; i <= totalPages; i++) {
     if (i === 1 || i === totalPages || (i >= safePage - 1 && i <= safePage + 1))
@@ -522,12 +495,19 @@ useEffect(() => {
       pageNums.push("…");
   }
 
+  // ── shimmer style injection ───────────────────────────────────────────────
   useEffect(() => {
-    if (focusedIdx === null || !tableRef.current) return;
-    const rows = tableRef.current.querySelectorAll("tbody tr[data-idx]");
-    rows[focusedIdx]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [focusedIdx]);
+    if (document.getElementById("dg-shimmer-style")) return;
+    const s = document.createElement("style");
+    s.id = "dg-shimmer-style";
+    s.textContent = `
+      @keyframes dg-shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+      tr[data-idx]:focus { outline:none; }
+    `;
+    document.head.appendChild(s);
+  }, []);
 
+  // ── keyboard ──────────────────────────────────────────────────────────────
   const parseHotkey = raw => {
     const parts = raw.toLowerCase().split("+");
     const key = parts[parts.length - 1];
@@ -548,19 +528,13 @@ useEffect(() => {
         if (prev === null) return e.key === "ArrowDown" ? 0 : len - 1;
         return e.key === "ArrowDown" ? Math.min(prev + 1, len - 1) : Math.max(prev - 1, 0);
       });
-      tableRef.current?.querySelector("tbody tr[data-idx]")?.focus();
       return;
     }
-
     if (e.key === "Enter" && selectable && !inInput) {
       const idx = focusedIdxRef.current;
-      if (idx !== null && pageRows[idx]) {
-        e.preventDefault();
-        toggleRow(pageRows[idx].id);
-      }
+      if (idx !== null && pageRows[idx]) { e.preventDefault(); toggleRow(pageRows[idx].id); }
       return;
     }
-
     if (inInput && !e.ctrlKey && !e.altKey) return;
     const btns = [...footerButtons, ...HeaderButtons];
     for (const btn of btns) {
@@ -577,40 +551,42 @@ useEffect(() => {
     }
   }, [pageRows, selected, footerButtons, data]);
 
-
-
   useEffect(() => {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
-  if (typeof document !== "undefined" && !document.getElementById("dg-shimmer-style")) {
-    const s = document.createElement("style");
-    s.id = "dg-shimmer-style";
-    s.textContent = `
-      @keyframes dg-shimmer { 0% { background-position:200% 0 } 100% { background-position:-200% 0 } }
-      tr[data-idx]:focus { outline: none; }
-    `;
-    document.head.appendChild(s);
-  }
+  useEffect(() => {
+    if (focusedIdx === null || !tableRef.current) return;
+    tableRef.current.querySelectorAll("tbody tr[data-idx]")[focusedIdx]
+      ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [focusedIdx]);
 
+  // ── styles ────────────────────────────────────────────────────────────────
   const S = {
     wrap: { background: C.card, borderRadius: 16, border: `1px solid ${C.border}`, boxShadow: "0 2px 12px #00000009", overflow: "visible" },
     toolbar: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px", borderBottom: `1px solid ${C.border}`, gap: 10, flexWrap: "wrap", background: "#fafbfd" },
     titleText: { fontSize: 14, fontWeight: 800, color: C.text, letterSpacing: "-.01em" },
     toolbarRight: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
-    toolbarleft: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
     searchWrap: { position: "relative", display: "flex", alignItems: "center" },
     searchIcon: { position: "absolute", left: 10, fontSize: 13, color: C.muted, pointerEvents: "none" },
-    searchInput: { height: 33, padding: "0 10px 0 30px", border: `1.5px solid ${C.border}`, borderRadius: 9, fontSize: 12.5, fontFamily: "inherit", background: C.card, color: C.text, outline: "none", width: 210, transition: "border .15s, box-shadow .15s" },
+    searchInput: { height: 33, padding: "0 10px 0 30px", border: `1.5px solid ${C.border}`, borderRadius: 9, fontSize: 12.5, fontFamily: "inherit", background: C.card, color: C.text, outline: "none", width: 200, transition: "border .15s, box-shadow .15s" },
     colBtn: { height: 33, padding: "0 12px", borderRadius: 9, border: `1.5px solid ${C.border}`, background: C.card, fontSize: 12, fontWeight: 600, color: C.sub, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", transition: "all .15s" },
     colDropdown: { position: "absolute", right: 0, top: "calc(100% + 6px)", background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: "0 8px 30px #00000014", padding: 8, zIndex: 200, minWidth: 170 },
     colItem: { display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, color: C.sub, transition: "background .1s", userSelect: "none" },
+    // ── date filter bar ──
+    dateBar: { display: "flex", alignItems: "center", gap: 6, padding: "7px 18px", flexWrap: "nowrap", overflowX: "auto", minHeight: 44, justifyContent: "flex-end" },
+    dateLabel: { fontSize: 11.5, fontWeight: 700, color: C.muted, letterSpacing: ".05em", whiteSpace: "nowrap", flexShrink: 0, marginRight: 2 },
+    dateInput: { height: 30, padding: "0 8px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 12.5, fontFamily: "inherit", background: C.card, color: C.text, outline: "none", cursor: "pointer", width: 132, flexShrink: 0 },
+    dateSep: { fontSize: 12, color: C.hint, flexShrink: 0, userSelect: "none" },
+    dateDivider: { width: 1, height: 18, background: C.border, flexShrink: 0, margin: "0 4px" },
+    dateQuickBtn: { height: 28, padding: "0 10px", borderRadius: 7, border: `1.5px solid ${C.border}`, background: "transparent", fontSize: 11.5, fontWeight: 600, color: C.sub, cursor: "pointer", fontFamily: "inherit", transition: "all .13s", whiteSpace: "nowrap", flexShrink: 0 },
+    // ── rest ──
     selBar: { display: "flex", alignItems: "center", gap: 10, padding: "9px 18px", background: C.accent + "12", borderBottom: `1px solid ${C.accent}33`, fontSize: 12.5, fontWeight: 600, color: C.accent, flexWrap: "wrap" },
     tableWrap: { overflowX: "auto" },
     table: { width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 520 },
     thead: { background: "#f7f8fb", borderBottom: `2px solid ${C.border}` },
-    th: sortable => ({ padding: "11px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".07em", whiteSpace: "nowrap", userSelect: "none", cursor: sortable ? "pointer" : "default", transition: "color .1s, background .1s" }),
+    th: sortable => ({ padding: "11px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".07em", whiteSpace: "nowrap", userSelect: "none", cursor: sortable ? "pointer" : "default" }),
     thCheck: { padding: "11px 14px", width: 38, textAlign: "center" },
     td: { padding: "11px 14px", color: C.text, fontSize: 13, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap", verticalAlign: "middle" },
     tdCheck: { padding: "11px 14px", width: 38, textAlign: "center", borderBottom: `1px solid ${C.border}`, verticalAlign: "middle" },
@@ -622,6 +598,7 @@ useEffect(() => {
     pagination: { display: "flex", alignItems: "center", gap: 4 },
     pageBtn: (active, disabled) => ({ minWidth: 30, height: 30, padding: "0 6px", borderRadius: 8, border: `1.5px solid ${active ? C.accent : C.border}`, background: active ? C.accent : C.card, fontSize: 12, fontWeight: 600, color: active ? "#fff" : C.sub, cursor: disabled ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all .13s", fontFamily: "inherit", opacity: disabled ? 0.38 : 1, boxShadow: active ? `0 2px 8px ${C.accent}44` : "none" }),
     actionBtn: variant => ({ height: 30, padding: "0 12px", borderRadius: 8, border: variant === "danger" ? `1.5px solid ${C.red}33` : variant === "primary" ? `1.5px solid ${C.accent}` : `1.5px solid ${C.border}`, background: variant === "danger" ? C.redBg : variant === "primary" ? C.accent : C.card, fontSize: 12, fontWeight: 600, color: variant === "danger" ? C.red : variant === "primary" ? "#fff" : C.sub, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "inherit", transition: "filter .13s", whiteSpace: "nowrap" }),
+    excelBtn: { height: 33, padding: "0 12px", borderRadius: 9, border: `1.5px solid ${C.green}55`, background: C.greenBg, fontSize: 12, fontWeight: 700, color: C.green, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", transition: "all .15s", whiteSpace: "nowrap" },
     footerActions: { display: "flex", alignItems: "center", gap: 7 },
     skeleton: { background: "linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%)", backgroundSize: "200% 100%", animation: "dg-shimmer 1.3s infinite", borderRadius: 6, height: 13 },
   };
@@ -633,6 +610,33 @@ useEffect(() => {
     return "transparent";
   };
 
+  // ── quick-date helpers ────────────────────────────────────────────────────
+  const setThisMonth = () => {
+    const now = new Date();
+    setDateFrom(fmtDateISO(new Date(now.getFullYear(), now.getMonth(), 1)));
+    setDateTo(fmtDateISO(new Date(now.getFullYear(), now.getMonth() + 1, 0)));
+  };
+  const setThisQuarter = () => {
+    const now = new Date();
+    // Indian financial quarters: Q1=Apr-Jun, Q2=Jul-Sep, Q3=Oct-Dec, Q4=Jan-Mar
+    const m = now.getMonth(); // 0-indexed
+    const fyYear = m >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+    const qStarts = [3, 6, 9, 0]; // Apr, Jul, Oct, Jan (month index)
+    const qIdx = m >= 9 ? 2 : m >= 6 ? 1 : m >= 3 ? 0 : 3;
+    const qStartMonth = qStarts[qIdx];
+    const qStartYear = qStartMonth === 0 ? fyYear + 1 : fyYear;
+    const qStart = new Date(qStartYear, qStartMonth, 1);
+    const qEnd = new Date(qStartYear, qStartMonth + 3, 0);
+    setDateFrom(fmtDateISO(qStart));
+    setDateTo(fmtDateISO(qEnd));
+  };
+  const setThisFY = () => {
+    const fy = currentFinancialYear();
+    setDateFrom(fy.from);
+    setDateTo(fy.to);
+  };
+
+  // ── render ────────────────────────────────────────────────────────────────
   return (
     <div style={S.wrap} data-dg-root="1">
 
@@ -640,15 +644,7 @@ useEffect(() => {
       <div style={S.toolbar}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", flex: 1 }}>
           {title && <span style={S.titleText}>{title}</span>}
-
-          {/* Move header extra here */}
-          {headerExtra && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              {headerExtra}
-            </div>
-          )}
-
-          {/* Move HeaderButtons here */}
+          {headerExtra && <div style={{ display: "flex", alignItems: "center", gap: 10 }}>{headerExtra}</div>}
           {HeaderButtons.length > 0 && (
             <div style={S.footerActions}>
               {HeaderButtons.map(btn => (
@@ -666,6 +662,54 @@ useEffect(() => {
           )}
         </div>
 
+        {/* ── DATE FILTER BAR ── */}
+        {dateFilter && (
+          <div style={S.dateBar}>
+
+
+            {/* Quick selectors */}
+            {[
+              { label: "This Month", fn: setThisMonth },
+              { label: "This Quarter", fn: setThisQuarter },
+              { label: "This FY", fn: setThisFY },
+            ].map(q => (
+              <button key={q.label} style={S.dateQuickBtn}
+                onClick={q.fn}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; e.currentTarget.style.background = C.accent + "0d"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.sub; e.currentTarget.style.background = "transparent"; }}
+              >{q.label}</button>
+            ))}
+            {/* Vertical divider */}
+            <span style={S.dateDivider} />
+
+
+            {/* From date */}
+            <input
+              type="date" value={dateFrom}
+              style={S.dateInput}
+              onChange={e => setDateFrom(e.target.value)}
+              onFocus={e => (e.target.style.borderColor = C.accent)}
+              onBlur={e => (e.target.style.borderColor = C.border)}
+            />
+
+            {/* Arrow separator */}
+            <span style={S.dateSep}>→</span>
+
+            {/* To date */}
+            <input
+              type="date" value={dateTo}
+              style={S.dateInput}
+              onChange={e => setDateTo(e.target.value)}
+              onFocus={e => (e.target.style.borderColor = C.accent)}
+              onBlur={e => (e.target.style.borderColor = C.border)}
+            />
+
+
+
+          </div>
+        )}
+
+
         <div style={S.toolbarRight}>
           {/* Search */}
           <div style={S.searchWrap}>
@@ -679,6 +723,20 @@ useEffect(() => {
               onBlur={e => { e.target.style.borderColor = C.border; e.target.style.boxShadow = "none"; }}
             />
           </div>
+
+          {/* Excel export */}
+          <button
+            style={{ ...S.excelBtn, opacity: exportLoading ? 0.65 : 1 }}
+            disabled={exportLoading}
+            onClick={handleExport}
+            onMouseEnter={e => (e.currentTarget.style.filter = "brightness(.93)")}
+            onMouseLeave={e => (e.currentTarget.style.filter = "brightness(1)")}
+            title="Export to Excel"
+          >
+            {exportLoading ? "⏳" : "⬇️"}
+          </button>
+
+
           {/* Column visibility */}
           <div style={{ position: "relative" }} ref={colDropRef}>
             <button
@@ -686,24 +744,26 @@ useEffect(() => {
               onClick={() => setColDropOpen(o => !o)}
               onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.sub; }}
-            >⊞ Columns</button>
+            >⊞</button>
             {colDropOpen && (
               <div style={S.colDropdown}>
-                {columns.map(c => (
+                {gridCols.map(c => (
                   <label key={c.key} style={S.colItem}
                     onMouseEnter={e => (e.currentTarget.style.background = C.bg)}
                     onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                   >
-                    <input type="checkbox" checked={visibleKeys.includes(c.key)} onChange={() => toggleCol(c.key)} style={{ accentColor: C.accent, width: 14, height: 14 }} />
+                    <input type="checkbox" checked={visibleKeys.includes(c.key)} onChange={() => toggleCol(c.key)}
+                      style={{ accentColor: C.accent, width: 14, height: 14 }} />
                     {c.label}
                   </label>
                 ))}
               </div>
             )}
           </div>
-
         </div>
       </div>
+
+
 
       {/* ── SELECTION BANNER ── */}
       {selected.size > 0 && (
@@ -796,12 +856,7 @@ useEffect(() => {
       {/* ── FOOTER ── */}
       <div style={S.footer}>
         <div style={S.footerLeft}>
-          {/* ── footerExtra: closing balance info etc. ── */}
-          {footerExtra && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {footerExtra}
-            </div>
-          )}
+          {footerExtra && <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{footerExtra}</div>}
           {footerButtons.length > 0 && (
             <div style={S.footerActions}>
               {footerButtons.map(btn => (
@@ -822,8 +877,7 @@ useEffect(() => {
           <span style={S.footerInfo}>
             {total === 0
               ? "No records"
-              : <>{from}–{to} of <strong style={{ color: C.sub }}>{total}</strong> records</>
-            }
+              : <>{from}–{to} of <strong style={{ color: C.sub }}>{total}</strong> records</>}
           </span>
           <div style={S.pagination}>
             <button style={S.pageBtn(false, safePage === 1)} disabled={safePage === 1} onClick={() => setPage(p => p - 1)}>‹</button>
@@ -845,6 +899,46 @@ useEffect(() => {
   );
 }
 
+
+// ─── USAGE EXAMPLE ────────────────────────────────────────────────────────────
+//
+// const columns = [
+//   { key: "date",   label: "Date",   visibleIn: "both"  },
+//   { key: "party",  label: "Party",  visibleIn: "both"  },
+//   { key: "amount", label: "Amount", visibleIn: "both",
+//     exportValue: (v) => Number(v) },           // raw number in Excel
+//   { key: "actions",label: "Actions",visibleIn: "grid"  }, // grid only, skip excel
+//   { key: "gstin",  label: "GSTIN",  visibleIn: "excel" }, // excel only, hidden in grid
+// ];
+//
+// // Client-side:
+// <DataGrid
+//   title="Transactions"
+//   columns={columns}
+//   data={rows}
+//   dateFilter                        // ← turns on the date bar (defaults to current FY)
+//   exportFilename="transactions.xlsx"
+// />
+//
+// // Lazy (server-side):
+// <DataGrid
+//   title="Transactions"
+//   columns={columns}
+//   data={rows}
+//   lazy
+//   total={totalCount}
+//   dateFilter
+//   exportFilename="transactions.xlsx"
+//   onFetch={async ({ page, pageSize, search, sortKey, sortDir, dateFrom, dateTo, exportAll }) => {
+//     const result = await api.getTransactions({
+//       page, pageSize, search, sortKey, sortDir,
+//       dateFrom, dateTo,
+//       limit: exportAll ? 999999 : pageSize,
+//     });
+//     setRows(result.rows);
+//     setTotalCount(result.total);
+//   }}
+// />
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -897,7 +991,7 @@ if (typeof document !== "undefined" && !document.getElementById("xc-shared-style
 //  Escape     close
 //  Any char   filters list (search)
 // ─────────────────────────────────────────────────────────────────────────────
-export function Dropdown({
+export const Dropdown = forwardRef(function Dropdown({
   options = [],
   value,
   onChange,
@@ -910,7 +1004,19 @@ export function Dropdown({
   keyField = "id",
   displayField = "name",
   allowSearch = true,
-}) {
+} , ref) {
+
+ const triggerRef = useRef(null); // add this ref for the trigger div
+
+  // expose focus() to parent
+  useImperativeHandle(ref, () => ({
+  focus: () => triggerRef.current?.focus(),
+  focusAt: (idx) => {
+    triggerRef.current?.focus();
+    setFocIdx(idx);      // jump to specific index after open
+  }
+}));
+
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [focIdx, setFocIdx] = useState(-1);
@@ -931,10 +1037,10 @@ export function Dropdown({
   // close on outside click
   useEffect(() => {
     const h = e => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
-        setOpen(false);
-        setSearch("");
-        setFocIdx(-1);
+      if (wrapRef.current && !wrapRef.current.contains(e.target) ) {
+        // setOpen(false);
+        // setSearch("");
+        // setFocIdx(-1);
       }
     };
     document.addEventListener("mousedown", h);
@@ -1000,6 +1106,7 @@ export function Dropdown({
       if (matchMod && e.key.toLowerCase() === bareKey.toLowerCase()) {
         e.preventDefault();
         fireBtnAction(btn);
+
         return;
       }
     }
@@ -1168,7 +1275,7 @@ export function Dropdown({
       )}
     </div>
   );
-}
+});
 
 
 // ─────────────────────────────────────────────────────────────────────────────

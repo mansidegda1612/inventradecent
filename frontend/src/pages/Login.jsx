@@ -14,8 +14,8 @@ export default function Login({ onLogin }) {
       "password": password
     });
     if (res.success && res.data) {
-      sessionStorage.setItem("token", res.data.accessToken);
-      sessionStorage.setItem("userRole", res.data.user.userrole);
+      localStorage.setItem("token", res.data.accessToken);
+      localStorage.setItem("userRole", res.data.user.userrole);
 
       onLogin(res.data.user.userrole);
     }

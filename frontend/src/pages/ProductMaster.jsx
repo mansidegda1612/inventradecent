@@ -15,12 +15,12 @@ import { callAPI } from "../utils/callserver";
 import ProductFormModal from "./ProductFormModal"; // ← the new headless component
 
 export default function ProductMaster() {
-  const [list, setList]       = useState([]);
-  const [total, setTotal]     = useState(0);
+  const [list, setList] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [toasts, setToasts]   = useState({ open: false, msg: null, type: null });
+  const [toasts, setToasts] = useState({ open: false, msg: null, type: null });
 
-  const loadModelRef   = useRef({});
+  const loadModelRef = useRef({});
   const productFormRef = useRef(null); // ref to ProductFormModal
 
   // ── toast ─────────────────────────────────────────────────────────────────
@@ -37,9 +37,12 @@ export default function ProductMaster() {
       if (loadModel.search) url += `&search=${loadModel.search}`;
       setLoading(true);
       const res = await callAPI(url, "GET");
-      if (res.success) {
-        setList(res.data ?? []);
-        setTotal(res.pagination?.total ?? 0);
+      if (loadModel.exportAll) {
+        return res?.data;
+      }
+      else {
+        setList(res?.data ?? []);
+        setTotal(res?.pagination?.total ?? 0);
       }
     } catch (err) {
       console.error("Error fetching products:", err);
@@ -73,18 +76,17 @@ export default function ProductMaster() {
               ),
             },
             { key: "category_name", label: "Category" },
-            { key: "barcode",       label: "Barcode"  },
+            { key: "barcode", label: "Barcode" },
             {
               key: "gstPer",
               label: "GST %",
               render: (value) => <span>{value}%</span>,
             },
-            { key: "sale_rate",  label: "Sale Rate"  },
-            { key: "purc_rate",  label: "Purc Rate"  },
-            { key: "o_qty",      label: "Opening Qty"},
+            { key: "sale_rate", label: "Sale Rate" },
+            { key: "purc_rate", label: "Purc Rate" },
+            { key: "o_qty", label: "Opening Qty" },
           ]}
           data={list}
-          pageSize={15}
           lazy
           total={total}
           loading={loading}

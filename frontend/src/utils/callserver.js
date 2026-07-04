@@ -8,7 +8,7 @@
  */
 export async function callAPI(url, method, data = null) {
  const fullUrl = `${import.meta.env.VITE_API_URL}${url}`;
-  const token = sessionStorage.getItem("token");
+  const token = localStorage.getItem("token");
 
   const methodsWithBody = ["POST", "PUT", "PATCH"];
   const hasBody = methodsWithBody.includes(method.toUpperCase()) && data;

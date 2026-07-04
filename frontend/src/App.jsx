@@ -1,4 +1,6 @@
 import { useState } from "react";
+import * as XLSX from "xlsx";
+window.XLSX = XLSX; // make it available to DataGrid
 import "./style/global.css";
 // import "./style/transaction.css";
 
@@ -46,12 +48,15 @@ function HamburgerIcon() {
 }
 
 export default function App() {
-  const [role, setRole] = useState(sessionStorage.getItem("userRole") ? parseInt(sessionStorage.getItem("userRole")) : null);
-  const [page, setPage] = useState("dashboard");
+  const [role, setRole] = useState(localStorage.getItem("userRole") ? parseInt(localStorage.getItem("userRole")) : null);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // read last visited page on load, fall back to "dashboard"
+  const [page, setPageState] = useState(() => sessionStorage.getItem("currentPage") || "dashboard");
 
-  const islogin = sessionStorage.getItem("token") != undefined;
+
+
+  const islogin = localStorage.getItem("token") != undefined;
   if (!islogin) return <Login onLogin={setRole} />;
 
   // ✅ Option 2 — render function, no memo needed
@@ -71,7 +76,12 @@ export default function App() {
     }
   }
 
-  const handleLogout = () => { sessionStorage.clear(); setRole(null); setPage("dashboard"); setMobileOpen(false); };
+  const setPage = (p) => {
+    sessionStorage.setItem("currentPage", p);
+    setPageState(p);
+  };
+
+  const handleLogout = () => { sessionStorage.clear(); localStorage.clear(); setRole(null); setPageState("dashboard"); setMobileOpen(false); };
 
   return (
     <>

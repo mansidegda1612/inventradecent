@@ -23,5 +23,6 @@ export const C = {
   sidebarBg: "#1E1B4B",
   sidebarBorder: "#2D2B5E",
   sidebarText: "#A5B4FC",
+  card:    "#ffffff",
 };
 

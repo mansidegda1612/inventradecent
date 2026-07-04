@@ -2,6 +2,8 @@ import { useState, useRef, useCallback } from "react";
 import { C } from "../utils/theme";
 import { fmt, fmtNum, fmtDateShort } from "../utils/format";
 import { callAPI } from "../utils/callserver";
+import { GSTInvoicePrinter } from "../utils/GSTInvoicePrinter";
+import { sendWhatsApp, buildUPILink, buildBillMessage } from "../utils/WhatsAppSender";
 import {
   Btn,
   Card,
@@ -50,6 +52,7 @@ export default function SaleEntry() {
 
   const [modal, setModal] = useState(false);
   const [edit, setEdit] = useState(null);
+  const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(getEmptyForm());
 
   const [customers, setCustomers] = useState([]);
@@ -58,9 +61,10 @@ export default function SaleEntry() {
   const [barInput, setBarInput] = useState("");
   const [productSearch, setProductSearch] = useState("");
   const barRef = useRef(null);
-  const qtyFocusRef = useRef(null); 
+  const qtyFocusRef = useRef(null);
   const productFormRef = useRef(null);
   const accountRef = useRef(null);
+  const productDropdownRef = useRef(null);
 
 
   const [toasts, setToasts] = useState({ open: false, msg: null, type: null });
@@ -81,6 +85,7 @@ export default function SaleEntry() {
     // Re-fetch products for the dropdown
     const res = await callAPI("products", "GET");
     if (res.success) setProducts(res.data ?? []);
+
   };
 
   // handle account add . edit delete
@@ -96,13 +101,20 @@ export default function SaleEntry() {
       let url = "transactions";
       url += `?page=${loadModel.page}`;
       url += `&limit=${loadModel.pageSize}`;
+      url += `&from=${loadModel.dateFrom}`;
+      url += `&to=${loadModel.dateTo}`;
       url += `&type=SI`;
       url += loadModel.search ? `&search=${loadModel.search}` : "";
       setLoading(true);
       const res = await callAPI(url, "GET");
       if (res.success) {
-        setList(res?.data ?? []);
-        setTotal(res?.pagination?.total ?? 0);
+        if (loadModel.exportAll) {
+          return res?.data;
+        }
+        else {
+          setList(res?.data ?? []);
+          setTotal(res?.pagination?.total ?? 0);
+        }
       }
     } catch (err) {
       console.error("Error fetching transactions:", err);
@@ -122,6 +134,61 @@ export default function SaleEntry() {
     if (res.success) setProducts(res.data ?? []);
   };
 
+  const PrepareData = async (row) => {
+    setEditId(row.transaction_id)
+    const res = await callAPI(`transactions/${row.transaction_id}`, "GET");
+    if (!res.success) {
+      show("Failed to load transaction", "error");
+      return;
+    }
+    const d = res.data;
+    const subtotal = d.items.reduce((s, i) => s + (i.taxable_amount || 0), 0);
+    const expenses = DEFAULT_EXPENSES.map((e) => ({ ...e }));
+    for (const item of expenses) {
+      item.amount = d[item.key];
+      item.pct = calcPercentageFromExpense(subtotal, item.amount)
+    }
+    const isgstbill = d.isgstbill == 1 ? true : false
+    let obj = {
+      cash_debit: d.cash_debit ?? "C",
+      customer_id: d.customer_id ?? null,
+      customer_name_cash: d.customer_name_cash ?? "",
+      bill_no: d.bill_no ?? "",
+      date: (d.date ?? today()).slice(0, 10),
+      isGSTBill: isgstbill,
+      items: (d.items ?? []).map((i) => {
+        // Look up the original product to get its GST percentages
+        const gst = splitGST(i?.gstPer || 0);
+
+        // If it was a GST bill, derive pct from stored amounts (as before)
+        // If non-GST bill, use master product percentages so toggling works
+        const cgst_pct = isgstbill && i.taxable_amount
+          ? (i.CGST / i.taxable_amount) * 100
+          : gst.cgst;
+        const sgst_pct = isgstbill && i.taxable_amount
+          ? (i.SGST / i.taxable_amount) * 100
+          : gst.sgst;
+
+        const itemBase = {
+          product_id: i.product_id,
+          name: i.product_name ?? "",
+          qty: parseFloat(i.qty) || 1,
+          rate: parseFloat(i.rate) || 0,
+          cgst_pct: parseFloat(cgst_pct),
+          sgst_pct: parseFloat(sgst_pct),
+        };
+        // Recalculate amounts based on isGSTBill flag
+        const amounts = calcItemAmounts(itemBase, isgstbill);
+        return { ...itemBase, ...amounts };
+      }),
+      expenses: expenses,
+      roundoff: parseFloat(d.ROUNDOFF) || 0,
+      roundoff_type: "₹",
+      final_amount: d.final_amount,
+    };
+    return obj;
+  }
+
   // ── open modal ────────────────────────────────────────────────────────────
   const open = async (row) => {
     await fetchCustomers();
@@ -130,56 +197,9 @@ export default function SaleEntry() {
     const productList = prodRes.success ? prodRes.data ?? [] : [];
     setProducts(productList);
     if (row) {
-      const res = await callAPI(`transactions/${row.transaction_id ?? row.id}`, "GET");
-      if (!res.success) {
-        show("Failed to load transaction", "error");
-        return;
-      }
-      const d = res.data;
-      const subtotal = d.items.reduce((s, i) => s + (i.taxable_amount || 0), 0);
-      const expenses = DEFAULT_EXPENSES.map((e) => ({ ...e }));
-      for (const item of expenses) {
-        item.amount = d[item.key];
-        item.pct = calcPercentageFromExpense(subtotal, item.amount)
-      }
-      const isgstbill = d.isgstbill == 1 ? true : false
-      setForm({
-        cash_debit: d.cash_debit ?? "C",
-        customer_id: d.customer_id ?? null,
-        customer_name_cash: d.customer_name_cash ?? "",
-        bill_no: d.bill_no ?? "",
-        date: (d.date ?? today()).slice(0, 10),
-        isGSTBill: isgstbill,
-        items: (d.items ?? []).map((i) => {
-          // Look up the original product to get its GST percentages
-          const masterProduct = productList.find(p => p.id === i.product_id);
-          const gst = splitGST(masterProduct?.gstPer || 0);
+      let obj = await PrepareData(row);
+      setForm(obj);
 
-          // If it was a GST bill, derive pct from stored amounts (as before)
-          // If non-GST bill, use master product percentages so toggling works
-          const cgst_pct = isgstbill && i.taxable_amount
-            ? (i.CGST / i.taxable_amount) * 100
-            : gst.cgst;
-          const sgst_pct = isgstbill && i.taxable_amount
-            ? (i.SGST / i.taxable_amount) * 100
-            : gst.sgst;
-
-          const itemBase = {
-            product_id: i.product_id,
-            name: i.product_name ?? "",
-            qty: parseFloat(i.qty) || 1,
-            rate: parseFloat(i.rate) || 0,
-            cgst_pct,
-            sgst_pct,
-          };
-          // Recalculate amounts based on isGSTBill flag
-          const amounts = calcItemAmounts(itemBase, isgstbill);
-          return { ...itemBase, ...amounts };
-        }),
-        expenses: expenses,
-        roundoff: parseFloat(d.ROUNDOFF) || 0,
-        roundoff_type: "₹",
-      });
       setEdit(row.transaction_id ?? row.id);
     } else {
       const bnRes = await callAPI("transactions/next-bill-no", "GET");
@@ -193,6 +213,8 @@ export default function SaleEntry() {
     setProductSearch("");
     setModal(true);
   };
+
+
 
   const updateItem = (index, field, value) => {
     setForm((f) => {
@@ -271,6 +293,7 @@ export default function SaleEntry() {
         setModal(false);
         await fetchTransactions(loadModelRef.current);
       }
+      return res;
     } catch (err) {
       show("Error saving transaction", "error");
       console.error(err);
@@ -339,7 +362,7 @@ export default function SaleEntry() {
         exp.pct = parseFloat(value);
         exp.amount = calcExpenseFromPercentage(subtotal, exp.pct);
       } else if (field === "amount") {
-        exp.amount = parseFloat(value) ;
+        exp.amount = parseFloat(value);
         exp.pct = calcPercentageFromExpense(subtotal, exp.amount);
       }
       updated[index] = exp;
@@ -358,6 +381,49 @@ export default function SaleEntry() {
     }));
   };
 
+
+  const handlePrint = async (focused) => {
+    // Build the data shape GSTInvoicePrinter expects.
+    // Most fields already live in `form` — just add party detail from customers list.
+    let printData = await PrepareData(focused);
+
+    await GSTInvoicePrinter.print(printData, "SI");
+  };
+
+  const handleWhatsApp = async (focused) => {
+    if (!focused) return;
+    const data = await PrepareData(focused);
+
+    // resolve customer name + phone
+    const customerName = data.cash_debit === "D"
+      ? customers.find((c) => c.id === data.customer_id)?.name
+      : data.customer_name_cash;
+
+    const customerPhone = data.cash_debit === "D"
+      ? customers.find((c) => c.id === data.customer_id)?.contact_no
+      : null; // cash customers usually have no stored phone — falls back to "pick a contact" in WhatsApp
+
+    const message = buildBillMessage({
+      customerName,
+      billNo: data.bill_no,
+      amount: data.final_amount,
+    });
+
+    // pdfBlob is optional — pass it once GSTInvoicePrinter can return a Blob
+    const pdfBlob = await GSTInvoicePrinter.generatePDFBlob?.(data, "SI"); // optional chaining in case method doesn't exist yet
+
+    const res = await callAPI("whatsapp/send-bill", "POST", {
+    phone: customerPhone,
+    customerName,
+    billNo: data.bill_no,
+    amount: data.final_amount,
+    // pdfBase64,
+  });
+
+  show(res.message, res.success ? "success" : "error");
+
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
@@ -370,10 +436,11 @@ export default function SaleEntry() {
       <Card noPad>
         <DataGrid
           title=""
+          dateFilter={true}
           columns={[
             {
               key: "cash_debit", label: "Cash/Debit",
-              render: (value) => <span style={{ fontWeight: 600, color: C.text }}>{value == "C" ? "Cash" : "Debit"}</span>,
+              render: (value) => <span style={{ fontWeight: 600, color: C.text }}>{value}</span>,
             },
             {
               key: "bill_no", label: "Bill No",
@@ -391,10 +458,9 @@ export default function SaleEntry() {
             },
           ]}
           data={list}
-          pageSize={15}
           lazy={true}
           total={total}
-          selectable={true}
+          // selectable={true}
           onFetch={(loadModel) => fetchTransactions(loadModel)}
           HeaderButtons={[
             {
@@ -411,6 +477,27 @@ export default function SaleEntry() {
             {
               key: "del", label: "Delete", icon: "🗑", variant: "danger", hotkey: "ctrl+d",
               onClick: (ids, all, focused) => deleteTransaction(false, focused),
+            },
+            {
+              key: "print",
+              label: "Print",
+              icon: "🖨",
+              hotkey: "ctrl+p",
+              onClick: async (ids, all, focused) => {
+                if (!focused) return;
+                // Load full transaction then print
+                await handlePrint(focused);
+              }
+            },
+            {
+              key: "whatsapp",
+              label: "WhatsApp",
+              icon: "💬",
+              hotkey: "ctrl+w",
+              onClick: async (ids, all, focused) => {
+                if (!focused) return;
+                await handleWhatsApp(focused);
+              },
             },
           ]}
         />
@@ -465,12 +552,11 @@ export default function SaleEntry() {
               {/* <div className="tr-toolbar-field" style={{ flex: 1, minWidth: 0 }}> */}
               <div className="tr-toolbar-label">Select Product</div>
               <Dropdown
-
                 value={productSearch}
                 clearable
                 options={products}
                 onChange={(e, opt) => addProduct(opt)}
-                                footerButtons={[
+                footerButtons={[
                   {
                     icon: "+",
                     label: "Add",
@@ -497,12 +583,7 @@ export default function SaleEntry() {
               />
             </div>
 
-            {/* Shortcut chips — pushed to right, no stray gap */}
-            <div className="tr-chips" style={{ marginLeft: "auto", flexShrink: 0 }}>
-              <span className="tr-chip"><kbd>F2</kbd> Product Search</span>
-              <span className="tr-chip"><kbd>F4</kbd> Customer</span>
-              <span className="tr-chip"><kbd>Enter</kbd> Add Item</span>
-            </div>
+
           </div>
 
           {/* ── MAIN CONTENT: Sidebar (expenses + summary) + Product grid ── */}
@@ -534,7 +615,7 @@ export default function SaleEntry() {
                 onItemUpdate={updateItem}
                 onItemRemove={removeItem}
                 isGSTBill={form.isGSTBill}
-                qtyFocusRef={qtyFocusRef} 
+                qtyFocusRef={qtyFocusRef}
               />
             </div>
           </div>
@@ -545,16 +626,17 @@ export default function SaleEntry() {
             onCancel={() => setModal(false)}
             loading={loading}
             canSave={form.items.length > 0 && !!form.bill_no}
+            onPrint={async () => { let res = await save(); await handlePrint(res.data); }}
           />
 
         </div>
       </Modal>
 
-      
+
       {/* ── account master referance ── */}
       <AccountFormModal ref={accountRef} onSaved={handleAccountSaved} />
 
-       {/* ── product master referance ── */}
+      {/* ── product master referance ── */}
       <ProductFormModal ref={productFormRef} onSaved={handleProductSaved} />
 
 

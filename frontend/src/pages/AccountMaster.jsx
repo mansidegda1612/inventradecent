@@ -17,14 +17,14 @@ import GroupMaster from "./GroupMaster";
 import AccountFormModal from "./AccountFormModal";
 
 export default function AccountMaster() {
-  const [list, setList]       = useState([]);
-  const [total, setTotal]     = useState(0);
+  const [list, setList] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [toasts, setToasts]   = useState({ open: false, msg: null, type: null });
+  const [toasts, setToasts] = useState({ open: false, msg: null, type: null });
 
-  const loadModelRef  = useRef({});
-  const accountRef    = useRef(null);  // → AccountFormModal
-  const groupRef      = useRef(null);  // → GroupMaster
+  const loadModelRef = useRef({});
+  const accountRef = useRef(null);  // → AccountFormModal
+  const groupRef = useRef(null);  // → GroupMaster
 
   const show = (msg, type = "success") => {
     setToasts({ open: true, msg, type });
@@ -39,9 +39,12 @@ export default function AccountMaster() {
       if (loadModel.search) url += `&search=${loadModel.search}`;
       setLoading(true);
       const res = await callAPI(url, "GET");
-      if (res.success) {
-        setList(res.data ?? []);
-        setTotal(res.pagination?.total ?? 0);
+      if (loadModel.exportAll) {
+        return res?.data;
+      }
+      else {
+        setList(res?.data ?? []);
+        setTotal(res?.pagination?.total ?? 0);
       }
     } catch (err) {
       console.error("Error fetching accounts:", err);
@@ -78,10 +81,10 @@ export default function AccountMaster() {
               key: "name", label: "Name",
               render: (v) => <span style={{ fontWeight: 600, color: C.text }}>{v}</span>,
             },
-            { key: "group_name",  label: "Group" },
-            { key: "city",        label: "City" },
-            { key: "gstin",       label: "GST No." },
-            { key: "contact_no",  label: "Contact No" },
+            { key: "group_name", label: "Group" },
+            { key: "city", label: "City" },
+            { key: "gstin", label: "GST No." },
+            { key: "contact_no", label: "Contact No" },
             {
               key: "opening", label: "Opening Balance",
               render: (v) => <BalancePill value={v} />,

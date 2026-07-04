@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { C } from "../utils/theme";
 import { fmt, fmtNum, fmtDateShort } from "../utils/format";
 import { callAPI } from "../utils/callserver";
+import { GSTInvoicePrinter } from "../utils/GSTInvoicePrinter";
 import {
   Btn,
   Card,
@@ -50,6 +51,7 @@ export default function PurchaseEntry() {
 
   const [modal, setModal] = useState(false);
   const [edit, setEdit] = useState(null);
+  const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(getEmptyForm());
 
   const [suppliers, setSuppliers] = useState([]);
@@ -93,13 +95,20 @@ export default function PurchaseEntry() {
       let url = "transactions";
       url += `?page=${loadModel.page}`;
       url += `&limit=${loadModel.pageSize}`;
+      url += `&from=${loadModel.dateFrom}`;
+      url += `&to=${loadModel.dateTo}`;
       url += `&type=PI`;
       url += loadModel.search ? `&search=${loadModel.search}` : "";
       setLoading(true);
       const res = await callAPI(url, "GET");
       if (res.success) {
-        setList(res?.data ?? []);
-        setTotal(res?.pagination?.total ?? 0);
+        if (loadModel.exportAll) {
+          return res?.data;
+        }
+        else {
+          setList(res?.data ?? []);
+          setTotal(res?.pagination?.total ?? 0);
+        }
       }
     } catch (err) {
       console.error("Error fetching transactions:", err);
@@ -114,6 +123,55 @@ export default function PurchaseEntry() {
     if (res.success) setSuppliers(res.data ?? []);
   };
 
+  const PrepareData = async (row) => {
+    setEditId(row.transaction_id)
+    const res = await callAPI(`transactions/${row.transaction_id ?? row.id}`, "GET");
+    if (!res.success) {
+      show("Failed to load purchase", "error");
+      return;
+    }
+    const d = res.data;
+    const subtotal = d.items.reduce((s, i) => s + (i.taxable_amount || 0), 0);
+    const expenses = DEFAULT_EXPENSES.map((e) => ({ ...e }));
+    for (const item of expenses) {
+      item.amount = d[item.key];
+      item.pct = calcPercentageFromExpense(subtotal, item.amount);
+    }
+    const isgstbill = d.isgstbill == 1 ? true : false;
+    let obj = {
+      cash_debit: d.cash_debit ?? "C",
+      customer_id: d.customer_id ?? null,
+      customer_name_cash: d.customer_name_cash ?? "",
+      bill_no: d.bill_no ?? "",
+      date: (d.date ?? today()).slice(0, 10),
+      isGSTBill: isgstbill,
+      items: (d.items ?? []).map((i) => {
+        const gst = splitGST(i?.gstPer || 0);
+        const cgst_pct = isgstbill && i.taxable_amount
+          ? (i.CGST / i.taxable_amount) * 100
+          : gst.cgst;
+        const sgst_pct = isgstbill && i.taxable_amount
+          ? (i.SGST / i.taxable_amount) * 100
+          : gst.sgst;
+        const itemBase = {
+          product_id: i.product_id,
+          name: i.product_name ?? "",
+          qty: parseFloat(i.qty) || 1,
+          rate: parseFloat(i.rate) || 0,
+          cgst_pct,
+          sgst_pct,
+        };
+        const amounts = calcItemAmounts(itemBase, isgstbill);
+        return { ...itemBase, ...amounts };
+      }),
+      expenses: expenses,
+      roundoff: parseFloat(d.ROUNDOFF) || 0,
+      roundoff_type: "₹",
+      final_amount: d.final_amount,
+    };
+    return obj;
+  }
+
   // ── open modal ────────────────────────────────────────────────────────────
   const open = async (row) => {
     await fetchSuppliers();
@@ -122,50 +180,9 @@ export default function PurchaseEntry() {
     setProducts(productList);
 
     if (row) {
-      const res = await callAPI(`transactions/${row.transaction_id ?? row.id}`, "GET");
-      if (!res.success) {
-        show("Failed to load purchase", "error");
-        return;
-      }
-      const d = res.data;
-      const subtotal = d.items.reduce((s, i) => s + (i.taxable_amount || 0), 0);
-      const expenses = DEFAULT_EXPENSES.map((e) => ({ ...e }));
-      for (const item of expenses) {
-        item.amount = d[item.key];
-        item.pct = calcPercentageFromExpense(subtotal, item.amount);
-      }
-      const isgstbill = d.isgstbill == 1 ? true : false;
-      setForm({
-        cash_debit: d.cash_debit ?? "C",
-        customer_id: d.customer_id ?? null,
-        customer_name_cash: d.customer_name_cash ?? "",
-        bill_no: d.bill_no ?? "",
-        date: (d.date ?? today()).slice(0, 10),
-        isGSTBill: isgstbill,
-        items: (d.items ?? []).map((i) => {
-          const masterProduct = productList.find(p => p.id === i.product_id);
-          const gst = splitGST(masterProduct?.gstPer || 0);
-          const cgst_pct = isgstbill && i.taxable_amount
-            ? (i.CGST / i.taxable_amount) * 100
-            : gst.cgst;
-          const sgst_pct = isgstbill && i.taxable_amount
-            ? (i.SGST / i.taxable_amount) * 100
-            : gst.sgst;
-          const itemBase = {
-            product_id: i.product_id,
-            name: i.product_name ?? "",
-            qty: parseFloat(i.qty) || 1,
-            rate: parseFloat(i.rate) || 0,
-            cgst_pct,
-            sgst_pct,
-          };
-          const amounts = calcItemAmounts(itemBase, isgstbill);
-          return { ...itemBase, ...amounts };
-        }),
-        expenses: expenses,
-        roundoff: parseFloat(d.ROUNDOFF) || 0,
-        roundoff_type: "₹",
-      });
+      let obj = await PrepareData(row);
+      setForm(obj);
+
       setEdit(row.transaction_id ?? row.id);
     } else {
       // const bnRes = await callAPI("transactions/next-bill-no", "GET");
@@ -242,6 +259,7 @@ export default function PurchaseEntry() {
         setModal(false);
         await fetchTransactions(loadModelRef.current);
       }
+      return res;
     } catch (err) {
       show("Error saving purchase", "error");
       console.error(err);
@@ -328,6 +346,14 @@ export default function PurchaseEntry() {
     }));
   };
 
+  const handlePrint = async (focused) => {
+    // Build the data shape GSTInvoicePrinter expects.
+    // Most fields already live in `form` — just add party detail from customers list.
+    let printData = await PrepareData(focused);
+
+    await GSTInvoicePrinter.print(printData, "PI");
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
@@ -340,10 +366,11 @@ export default function PurchaseEntry() {
       <Card noPad>
         <DataGrid
           title=""
+          dateFilter={true}
           columns={[
             {
               key: "cash_debit", label: "Cash/Debit",
-              render: (value) => <span style={{ fontWeight: 600, color: C.text }}>{value == "C" ? "Cash" : "Debit"}</span>,
+              render: (value) => <span style={{ fontWeight: 600, color: C.text }}>{value}</span>,
             },
             {
               key: "bill_no", label: "Bill No",
@@ -361,10 +388,9 @@ export default function PurchaseEntry() {
             },
           ]}
           data={list}
-          pageSize={15}
           lazy={true}
           total={total}
-          selectable={true}
+          // selectable={true}
           onFetch={(loadModel) => fetchTransactions(loadModel)}
           HeaderButtons={[
             {
@@ -382,6 +408,17 @@ export default function PurchaseEntry() {
               key: "del", label: "Delete", icon: "🗑", variant: "danger", hotkey: "ctrl+d",
               onClick: (ids, all, focused) => deleteTransaction(false, focused),
             },
+            {
+              key: "print",
+              label: "Print",
+              icon: "🖨",
+              hotkey: "ctrl+p",
+              onClick: async (ids, all, focused) => {
+                if (!focused) return;
+                // Load full transaction then print
+                await handlePrint(focused);
+              },
+            }
           ]}
         />
       </Card>
@@ -450,11 +487,6 @@ export default function PurchaseEntry() {
               />
             </div>
 
-            {/* Shortcut chips */}
-            <div className="tr-chips" style={{ marginLeft: "auto", flexShrink: 0 }}>
-              <span className="tr-chip"><kbd>F2</kbd> Product Search</span>
-              <span className="tr-chip"><kbd>F4</kbd> Supplier</span>
-            </div>
           </div>
 
           {/* ── MAIN CONTENT: Sidebar (expenses + summary) + Product grid ── */}
@@ -497,6 +529,7 @@ export default function PurchaseEntry() {
             onCancel={() => setModal(false)}
             loading={loading}
             canSave={form.items.length > 0 && !!form.bill_no}
+            onPrint={async () => { let res = await save(); await handlePrint(res.data); }}
           />
 
         </div>

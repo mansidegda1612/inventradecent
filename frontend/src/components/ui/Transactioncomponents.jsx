@@ -389,7 +389,7 @@ function ProductEntryRow({ item, index, onUpdate, onRemove, isGSTBill,qtyFocusRe
                 <input
                   type="number" min={0} max={28} step={0.1}
                   className="tr-cell-input"
-                  value={item.cgst_pct}
+                  value={fmtNum(item.cgst_pct)}
                   onChange={(e) => onUpdate(index, "cgst_pct", e.target.value)}
                   onKeyDown={handleMaxDigits(2)}
                 />
@@ -403,7 +403,7 @@ function ProductEntryRow({ item, index, onUpdate, onRemove, isGSTBill,qtyFocusRe
                 <input
                   type="number" min={0} max={28} step={0.1}
                   className="tr-cell-input"
-                  value={item.sgst_pct}
+                  value={fmtNum(item.sgst_pct)}
                   onChange={(e) => onUpdate(index, "sgst_pct", e.target.value)}
                   onKeyDown={handleMaxDigits(2)}
                 />
@@ -532,7 +532,7 @@ export function TransactionSummary({ itemAmount, expenses, final, roundoff, gst 
 // TRANSACTION ACTIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function TransactionActions({ onSave, onCancel, loading, canSave }) {
+export function TransactionActions({ onSave, onCancel, loading, canSave,onPrint }) {
   return (
     <div className="tr-footer">
       {/*<div className="tr-footer-left">
@@ -548,8 +548,8 @@ export function TransactionActions({ onSave, onCancel, loading, canSave }) {
         Cancel
       </button>
 
-      <button type="button" className="tr-btn-ghost">
-        Print
+      <button type="button" className="tr-btn-ghost" onClick={onPrint} disabled={loading || !canSave}>
+        {loading ? "Printing…" : "Print"}
       </button>
 
       <button
