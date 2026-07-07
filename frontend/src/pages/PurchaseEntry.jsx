@@ -530,6 +530,7 @@ export default function PurchaseEntry() {
             loading={loading}
             canSave={form.items.length > 0 && !!form.bill_no}
             onPrint={async () => { let res = await save(); await handlePrint(res.data); }}
+            allowPrint={true}
           />
 
         </div>

@@ -161,3 +161,64 @@ export function getEmptyForm() {
     isGSTBill: true, // New field for bill mode
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VOUCHER (Cash/Bank Receipt "CR"  |  Cash/Bank Payment "CP") UTILITIES
+// Added for bill-wise-adjustment vouchers. Reuses today() above — no new
+// import needed since it now lives in the same file. Nothing above this
+// section was changed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Empty voucher form template
+ * @param {string} type - "CR" (receipt) | "CP" (payment)
+ */
+export function getEmptyVoucherForm(type) {
+  return {
+    trans_type: type,          // "CR" | "CP"
+    payment_mode: "Cash",      // "Cash" | "Bank"
+    bill_no: "",
+    date: today(),
+    customer_id: null,
+    ref_no: "",
+    narration: "",
+    final_amount: "",
+    adjustments: {},           // { [bill_transaction_id]: amountString }
+  };
+}
+
+/**
+ * Calculate voucher totals — how much of the voucher amount is adjusted
+ * against bills vs. left "on account" (advance).
+ * @param {Object} adjustments - { [bill_transaction_id]: amountString }
+ * @param {number|string} final_amount - total voucher amount
+ */
+export function calcVoucherTotals(adjustments, final_amount) {
+  const totalAdjusted = Object.values(adjustments).reduce(
+    (s, v) => s + (parseFloat(v) || 0),
+    0
+  );
+  const voucherAmount = parseFloat(final_amount) || 0;
+  const onAccount = voucherAmount - totalAdjusted;
+  return { totalAdjusted, voucherAmount, onAccount };
+}
+
+/**
+ * FIFO auto-allocation: fills oldest bills first, up to the voucher amount.
+ * Returns a fresh adjustments map — doesn't mutate input.
+ * @param {Array} bills - pending bills, each with transaction_id & pending_amount
+ * @param {number|string} final_amount - total voucher amount
+ */
+export function autoAllocateFIFO(bills, final_amount) {
+  let remaining = parseFloat(final_amount) || 0;
+  const adjustments = {};
+  for (const b of bills) {
+    if (remaining <= 0) break;
+    const take = Math.min(b.pending_amount, remaining);
+    if (take > 0) {
+      adjustments[b.transaction_id] = take.toFixed(2);
+      remaining -= take;
+    }
+  }
+  return adjustments;
+}

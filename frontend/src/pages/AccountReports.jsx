@@ -23,6 +23,8 @@ function TransBadge({ type }) {
   const map = {
     SI: { label: "Sale", color: C.green },
     PI: { label: "Purchase", color: C.blue },
+    CR: { label: "Receipt",  color: C.green },   // NEW — Cash/Bank Receipt
+    CP: { label: "Payment",  color: C.blue }, // NEW — Cash/Bank Payment
   };
   const { label, color } = map[type] || { label: type, color: C.hint };
   return (
@@ -143,6 +145,11 @@ export default function AccountReports() {
   ];
 
   // ── ledger DataGrid columns ───────────────────────────────────────────────
+  // "Payable" column  = entries that move the payable side: PI (+) / CP (-)
+  // "Receivable" column = entries that move the receivable side: SI (+) / CR (-)
+  // (matches the running_balance direction: SI +, PI -, CR -, CP + already
+  //  computed on the backend — CP/CR here just show as a reduction on the
+  //  side they settle, same two-column ledger layout as before)
   const ledgerCols = [
     {
       key: "date", label: "Date",
@@ -153,7 +160,7 @@ export default function AccountReports() {
       render: v => <TransBadge type={v} />,
     },
     {
-      key: "bill_no", label: "Bill No",
+      key: "bill_no", label: "Bill / Voucher No",
       render: v => (
         <span style={{  fontSize: 12, color: C.accent, fontWeight: 600 }}>
           {v || "—"}
@@ -163,18 +170,24 @@ export default function AccountReports() {
     {
       key: "_debit", label: "Payable",
       sortable: false,
-      render: (_, row) =>
-        row.trans_type === "PI"
-          ? <span style={{ color: C.red, fontWeight: 600 }}>{fmt(row.final_amount)}</span>
-          : <span style={{ color: C.hint }}>—</span>,
+      render: (_, row) => {
+        if (row.trans_type === "PI")
+          return <span style={{ color: C.red, fontWeight: 600 }}>{fmt(row.final_amount)}</span>;
+        if (row.trans_type === "CP")   // NEW — payment reduces payable
+          return <span style={{ color: C.green, fontWeight: 600 }}>- {fmt(row.final_amount)}</span>;
+        return <span style={{ color: C.hint }}>—</span>;
+      },
     },
     {
       key: "_credit", label: "Receivable",
       sortable: false,
-      render: (_, row) =>
-        row.trans_type === "SI"
-          ? <span style={{ color: C.green, fontWeight: 600}}>{fmt(row.final_amount)}</span>
-          : <span style={{ color: C.hint }}>—</span>,
+      render: (_, row) => {
+        if (row.trans_type === "SI")
+          return <span style={{ color: C.green, fontWeight: 600}}>{fmt(row.final_amount)}</span>;
+        if (row.trans_type === "CR")   // NEW — receipt reduces receivable
+          return <span style={{ color: C.red, fontWeight: 600 }}>- {fmt(row.final_amount)}</span>;
+        return <span style={{ color: C.hint }}>—</span>;
+      },
     },
     {
       key: "running_balance", label: "Balance",
@@ -183,22 +196,35 @@ export default function AccountReports() {
   ];
 
   // ── outstanding DataGrid columns ─────────────────────────────────────────
+  // period_receipts (CR) is now returned by the backend and subtracted into
+  // `outstanding` — shown here as its own column so it's clear why the
+  // outstanding figure is lower than opening + sales.
   const outstandingCols = [
     { key: "name", label: "Customer", render: v => <span style={{ fontWeight: 600, color: C.text }}>{v}</span> },
     { key: "city", label: "City", render: v => <span style={{ color: C.muted }}>{v || "—"}</span> },
     { key: "contact_no", label: "Contact", render: v => <span style={{ color: C.muted }}>{v || "—"}</span> },
     { key: "opening", label: "Opening", render: v => <span>{fmt(v)}</span> },
     { key: "period_sales", label: "Sales", render: v => <span style={{ color: C.green, fontWeight: 600 }}>{fmt(v)}</span> },
+    {
+      key: "period_receipts", label: "Receipts", // NEW
+      render: v => <span style={{ color: C.red, fontWeight: 600 }}>{Number(v) > 0 ? `- ${fmt(v)}` : fmt(v)}</span>,
+    },
     { key: "outstanding", label: "Outstanding", render: v => <BalancePill value={v} /> },
   ];
 
   // ── supplier / payable DataGrid columns ──────────────────────────────────
+  // period_payments (CP) is now returned by the backend and subtracted into
+  // `payable`, shown here as its own column.
   const supplierCols = [
     { key: "name", label: "Supplier", render: v => <span style={{ fontWeight: 600, color: C.text }}>{v}</span> },
     { key: "city", label: "City", render: v => <span style={{ color: C.muted }}>{v || "—"}</span> },
     { key: "contact_no", label: "Contact", render: v => <span style={{ color: C.muted }}>{v || "—"}</span> },
     { key: "opening", label: "Opening", render: v => <span>{fmt(Math.abs(v))}</span> },
     { key: "period_purchases", label: "Purchases", render: v => <span style={{ color: C.blue, fontWeight: 600}}>{fmt(v)}</span> },
+    {
+      key: "period_payments", label: "Payments", // NEW
+      render: v => <span style={{ color: C.green, fontWeight: 600 }}>{Number(v) > 0 ? `- ${fmt(v)}` : fmt(v)}</span>,
+    },
     { key: "payable", label: "Payable", render: v => <BalancePill value={v}  /> },
   ];
 

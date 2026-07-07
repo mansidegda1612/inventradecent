@@ -3,7 +3,7 @@ import { C } from "../utils/theme";
 import { fmt, fmtNum, fmtDateShort } from "../utils/format";
 import { callAPI } from "../utils/callserver";
 import { GSTInvoicePrinter } from "../utils/GSTInvoicePrinter";
-import { sendWhatsApp, buildUPILink, buildBillMessage } from "../utils/WhatsAppSender";
+import { sendWhatsApp} from "../utils/WhatsAppSender";
 import {
   Btn,
   Card,
@@ -15,6 +15,7 @@ import {
   ToastProvider,
   ConfirmModal,
   Badge,
+  WhatsAppIcon
 } from "../components/ui/index";
 
 import {
@@ -403,24 +404,19 @@ export default function SaleEntry() {
       ? customers.find((c) => c.id === data.customer_id)?.contact_no
       : null; // cash customers usually have no stored phone — falls back to "pick a contact" in WhatsApp
 
-    const message = buildBillMessage({
-      customerName,
-      billNo: data.bill_no,
-      amount: data.final_amount,
-    });
 
     // pdfBlob is optional — pass it once GSTInvoicePrinter can return a Blob
-    const pdfBlob = await GSTInvoicePrinter.generatePDFBlob?.(data, "SI"); // optional chaining in case method doesn't exist yet
+     //const pdfBlob = await GSTInvoicePrinter.getPDFBlob(data, "SI"); // or "PI"
 
-    const res = await callAPI("whatsapp/send-bill", "POST", {
+  await sendWhatsApp({
     phone: customerPhone,
-    customerName,
     billNo: data.bill_no,
     amount: data.final_amount,
-    // pdfBase64,
+    customerName,
+    //pdfBlob: pdfBlob,
+    fileName: `Bill-${data.bill_no}.pdf`,
   });
 
-  show(res.message, res.success ? "success" : "error");
 
   };
 
@@ -492,7 +488,7 @@ export default function SaleEntry() {
             {
               key: "whatsapp",
               label: "WhatsApp",
-              icon: "💬",
+              icon:<WhatsAppIcon />,
               hotkey: "ctrl+w",
               onClick: async (ids, all, focused) => {
                 if (!focused) return;
@@ -627,6 +623,7 @@ export default function SaleEntry() {
             loading={loading}
             canSave={form.items.length > 0 && !!form.bill_no}
             onPrint={async () => { let res = await save(); await handlePrint(res.data); }}
+            allowPrint={true}
           />
 
         </div>

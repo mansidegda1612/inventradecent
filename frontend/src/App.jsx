@@ -16,6 +16,8 @@ import AccountMaster from "./pages/AccountMaster";
 import ProductMaster from "./pages/ProductMaster";
 import BarcodeGenerator from "./pages/BarcodeGenerator";
 import PurchaseEntry from "./pages/PurchaseEntry";
+import CashReceiptEntry from "./pages/CashReceiptEntry";   // NEW
+import CashPaymentEntry from "./pages/CashPaymentEntry";   // NEW
 import SaleEntry from "./pages/SaleEntry";
 import InventoryReports from "./pages/InventoryReports";
 import AccountReports from "./pages/AccountReports";
@@ -30,6 +32,8 @@ const PAGE_LABELS = {
   products: "Product Master",
   barcode: "Barcode Generator",
   purchase: "Purchase Entry",
+  "cash-receipt": "Cash/Bank Receipt",   // NEW
+  "cash-payment": "Cash/Bank Payment",   // NEW
   sale: "Sale Entry",
   "inv-reports": "Inventory Reports",
   "acc-reports": "Account Reports",
@@ -69,6 +73,8 @@ export default function App() {
       case "barcode": return <BarcodeGenerator />;
       case "purchase": return <PurchaseEntry />;
       case "sale": return <SaleEntry />;
+      case "cash-receipt": return <CashReceiptEntry />;   // NEW
+      case "cash-payment": return <CashPaymentEntry />;   // NEW
       case "inv-reports": return <InventoryReports />;
       case "acc-reports": return <AccountReports />;
       case "fin-reports": return <FinancialReports />;

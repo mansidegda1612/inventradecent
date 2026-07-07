@@ -10,6 +10,8 @@ const NAV = [
   { section: "Transactions",                                   roles: [1, 2]  },
   { id: "purchase",    label: "Purchase Entry",    icon: "↓", roles: [1, 2]  },
   { id: "sale",        label: "Sale Entry",        icon: "↑", roles: [1, 2]  },
+   { id: "cash-receipt", label: "Cash/Bank Receipt", icon: "⤓", roles: [1, 2]  },  // NEW
+  { id: "cash-payment", label: "Cash/Bank Payment", icon: "⤒", roles: [1, 2]  },  // NEW
   { section: "Reports",                                        roles: [1, 2]  },
   { id: "inv-reports", label: "Inventory Reports", icon: "◑", roles: [1, 2]  },
   { id: "acc-reports", label: "Account Reports",   icon: "≡", roles: [1, 2]  },

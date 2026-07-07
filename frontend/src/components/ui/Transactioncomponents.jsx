@@ -1,4 +1,4 @@
-import { useState , useEffect,  useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { fmt, fmtDateShort, fmtNum } from "../../utils/format";
 import { C } from "../../utils/theme";
 import { Btn, Field, Dropdown, TableWrap } from "./index";
@@ -55,7 +55,7 @@ export function TransactionHeader({
       <div className="tr-header-segment" >
         <div style={{ width: "100%" }}>
           <div className="tr-section-title">
-            {type === "PI" ? "Supplier Name" : "Customer Name" }
+            {type === "PI" ? "Supplier Name" : "Customer Name"}
           </div>
           {cashDebit === "D" ? (
             <div style={{ width: 220 }}>
@@ -63,7 +63,7 @@ export function TransactionHeader({
                 value={customerId}
                 onChange={(v) => onCustomerChange(v)}
                 options={customers}
-                placeholder={type === "PI" ? "Select Supplier…": "Select customer…"}
+                placeholder={type === "PI" ? "Select Supplier…" : "Select customer…"}
                 clearable
                 footerButtons={[            // ← ADD THIS
                   {
@@ -97,7 +97,7 @@ export function TransactionHeader({
               style={{ maxWidth: 300 }}
               value={customerNameCash}
               onChange={(e) => onCustomerNameChange(e.target.value)}
-              placeholder={type === "PI" ? "Supplier Name…" :"Walk-in Customer…"}
+              placeholder={type === "PI" ? "Supplier Name…" : "Walk-in Customer…"}
             />
           )}
         </div>
@@ -204,7 +204,7 @@ export function CustomerSelection({
 // PRODUCT ENTRY GRID
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function ProductEntryGrid({ items, onItemUpdate, onItemRemove, isGSTBill ,qtyFocusRef  }) {
+export function ProductEntryGrid({ items, onItemUpdate, onItemRemove, isGSTBill, qtyFocusRef }) {
   const totalQty = items.reduce((s, i) => s + (i.qty || 0), 0);
   const totalTaxable = items.reduce((s, i) => s + (i.taxable_amount || 0), 0);
   const totalGST = items.reduce((s, i) => s + (i.CGST || 0) + (i.SGST || 0), 0);
@@ -293,7 +293,7 @@ export function ProductEntryGrid({ items, onItemUpdate, onItemRemove, isGSTBill 
 // PRODUCT ENTRY ROW (expandable GST)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ProductEntryRow({ item, index, onUpdate, onRemove, isGSTBill,qtyFocusRef }) {
+function ProductEntryRow({ item, index, onUpdate, onRemove, isGSTBill, qtyFocusRef }) {
   const [open, setOpen] = useState(false);
   const lineTotal = (item.taxable_amount || 0) + (item.CGST || 0) + (item.SGST || 0);
   const totalGST = (item.CGST || 0) + (item.SGST || 0);
@@ -347,7 +347,7 @@ function ProductEntryRow({ item, index, onUpdate, onRemove, isGSTBill,qtyFocusRe
         </td>
         <td className="right">
           <input
-            ref={qtyInputRef}      
+            ref={qtyInputRef}
             type="number"
             className="tr-cell-input"
             value={item.qty}
@@ -469,7 +469,7 @@ export function ExpenseEntryGrid({ expenses, onExpenseUpdate }) {
                       expenses.findIndex(e2 => e2.key === exp.key),
                       "amount", e.target.value
                     )}
-                    
+
                   />
                 </td>
               </tr>
@@ -532,7 +532,7 @@ export function TransactionSummary({ itemAmount, expenses, final, roundoff, gst 
 // TRANSACTION ACTIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function TransactionActions({ onSave, onCancel, loading, canSave,onPrint }) {
+export function TransactionActions({ onSave, onCancel, loading, canSave, onPrint ,allowPrint }) {
   return (
     <div className="tr-footer">
       {/*<div className="tr-footer-left">
@@ -547,10 +547,11 @@ export function TransactionActions({ onSave, onCancel, loading, canSave,onPrint 
       <button type="button" className="tr-btn-ghost" onClick={onCancel}>
         Cancel
       </button>
-
-      <button type="button" className="tr-btn-ghost" onClick={onPrint} disabled={loading || !canSave}>
-        {loading ? "Printing…" : "Print"}
-      </button>
+      {allowPrint &&
+        <button type="button" className="tr-btn-ghost" onClick={onPrint} disabled={loading || !canSave}>
+          {loading ? "Printing…" : "Print"}
+        </button>
+      }
 
       <button
         type="button"
@@ -560,6 +561,289 @@ export function TransactionActions({ onSave, onCancel, loading, canSave,onPrint 
       >
         {loading ? "Saving…" : "💾 Save"}
       </button>
+    </div>
+  );
+}
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────
+ * ADD these 3 exports to the BOTTOM of
+ * src/components/ui/Transactioncomponents.jsx
+ *
+ * Nothing in the existing file is changed — TransactionHeader,
+ * CustomerSelection, ProductEntryGrid, ExpenseEntryGrid, TransactionSummary
+ * and TransactionActions stay exactly as they are today.
+ * TransactionActions is REUSED as-is for the voucher's Save/Cancel/Print
+ * footer (same onSave/onCancel/loading/canSave/onPrint signature already
+ * fits a voucher), so no new "actions" component is needed.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VOUCHER HEADER  (Cash/Bank Receipt "CR"  |  Cash/Bank Payment "CP")
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function VoucherHeader({
+  type, // "CR" | "CP"
+  paymentMode,
+  onPaymentModeChange,
+  billNo,
+  onBillNoChange,
+  date,
+  onDateChange,
+  refNo,
+  onRefNoChange,
+  customerId,
+  customers = [],
+  onCustomerChange,
+  narration,
+  onNarrationChange,
+  accountFormRef,
+}) {
+  const partyLabel = type === "CR" ? "Received From (Customer)" : "Paid To (Supplier)";
+
+  return (
+    <div className="tr-header">
+      {/* Payment Mode */}
+      <div className="tr-header-segment">
+        <div>
+          <div className="tr-section-title">Payment Mode</div>
+          <div className="tr-toggle-group">
+            <button
+              type="button"
+              className={`tr-toggle-btn ${paymentMode === "Cash" ? "active" : ""}`}
+              onClick={() => onPaymentModeChange("Cash")}
+            >
+              💵 Cash
+            </button>
+            <button
+              type="button"
+              className={`tr-toggle-btn ${paymentMode === "Bank" ? "active" : ""}`}
+              onClick={() => onPaymentModeChange("Bank")}
+            >
+              🏦 Bank
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="tr-vdivider" />
+
+      {/* Party (customer for CR / supplier for CP — same customer table) */}
+      <div className="tr-header-segment">
+        <div style={{ width: "100%" }}>
+          <div className="tr-section-title">{partyLabel}</div>
+          <div style={{ width: 220 }}>
+            <Dropdown
+              value={customerId}
+              onChange={(v) => onCustomerChange(v)}
+              options={customers}
+              placeholder="Select party…"
+              clearable
+              footerButtons={[
+                {
+                  icon: "+",
+                  label: "Add",
+                  hotkey: "ctrl+a",
+                  onClick: () => accountFormRef?.current?.openAdd(),
+                },
+                {
+                  icon: "⬇",
+                  label: "Edit",
+                  hotkey: "ctrl+e",
+                  onClick: (idx, focused) => {
+                    if (focused) accountFormRef?.current?.openEdit(focused);
+                  },
+                },
+                {
+                  icon: "🗑",
+                  label: "Delete",
+                  hotkey: "ctrl+d",
+                  onClick: (idx, focused) => {
+                    if (focused) accountFormRef?.current?.openDelete(focused);
+                  },
+                },
+              ]}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="tr-vdivider" />
+
+      {/* Voucher No / Date / Ref No */}
+      <div className="tr-header-segment">
+        <div className="tr-invoice-fields">
+          <div>
+            <div className="tr-toolbar-label" style={{ marginBottom: 3 }}>Voucher No *</div>
+            <input
+              className="tr-barcode-input"
+              value={billNo}
+              onChange={(e) => onBillNoChange(e.target.value)}
+              style={{ width: 170 }}
+            />
+          </div>
+          <div>
+            <div className="tr-toolbar-label" style={{ marginBottom: 3 }}>Date</div>
+            <input
+              type="date"
+              className="tr-barcode-input"
+              value={date}
+              onChange={(e) => onDateChange(e.target.value)}
+              style={{ width: 170 }}
+            />
+          </div>
+          {paymentMode === "Bank" && (
+            <div>
+              <div className="tr-toolbar-label" style={{ marginBottom: 3 }}>Ref / Cheque No</div>
+              <input
+                className="tr-barcode-input"
+                value={refNo}
+                onChange={(e) => onRefNoChange(e.target.value)}
+                style={{ width: 170 }}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="tr-vdivider" />
+
+      {/* Narration */}
+      <div className="tr-header-segment" style={{ flex: 1 }}>
+        <div style={{ width: "100%" }}>
+          <div className="tr-section-title">Narration</div>
+          <input
+            className="tr-barcode-input"
+            style={{ width: "100%" }}
+            value={narration}
+            onChange={(e) => onNarrationChange(e.target.value)}
+            placeholder="Optional note…"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BILL-WISE ADJUSTMENT GRID
+// Lists a party's outstanding SI (for CR) / PI (for CP) bills and lets the
+// user key in how much of the voucher amount settles each one.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function BillAdjustmentGrid({
+  bills,
+  adjustments,          // { [bill_transaction_id]: amountString }
+  onAdjustmentChange,   // (billId, value, pendingAmount) => void
+  onAutoAllocate,
+  voucherAmount,
+  loading,
+}) {
+  const totalAdjusted = Object.values(adjustments).reduce(
+    (s, v) => s + (parseFloat(v) || 0),
+    0
+  );
+
+  return (
+    <div className="tr-table-card">
+      <div className="tr-table-card-header">
+        <span className="tr-table-card-title">🧾 Bill-wise Adjustment</span>
+        <button
+          type="button"
+          className="tr-btn-ghost"
+          onClick={onAutoAllocate}
+          disabled={!bills.length}
+          title="Allocate against oldest bills first"
+        >
+          ⚡ Auto Allocate
+        </button>
+      </div>
+
+      <div className="tr-scroll">
+        {loading ? (
+          <div className="tr-empty-state"><span>Loading pending bills…</span></div>
+        ) : !bills.length ? (
+          <div className="tr-empty-state">
+            <span className="tr-empty-state-icon">📋</span>
+            <span>No pending bills for this party</span>
+          </div>
+        ) : (
+          <table className="tr-items-table-v2">
+            <thead>
+              <tr>
+                <th>Bill No</th>
+                <th>Date</th>
+                <th className="right">Bill Amt</th>
+                <th className="right">Pending</th>
+                <th className="right" style={{ width: 130 }}>Adjust Amt</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bills.map((b) => (
+                <tr key={b.transaction_id}>
+                  <td>{b.bill_no}</td>
+                  <td>{fmtDateShort(b.date)}</td>
+                  <td className="right tr-cell-mono">{fmtNum(b.final_amount)}</td>
+                  <td className="right tr-cell-mono">{fmtNum(b.pending_amount)}</td>
+                  <td className="right">
+                    <input
+                      type="number"
+                      className="tr-cell-input"
+                      value={adjustments[b.transaction_id] ?? ""}
+                      onChange={(e) =>
+                        onAdjustmentChange(b.transaction_id, e.target.value, b.pending_amount)
+                      }
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {bills.length > 0 && (
+        <div className="tr-table-footer">
+          <div className="tr-table-footer-item">
+            <span className="tr-table-footer-label">Total Adjusted</span>
+            <span className="tr-table-footer-value accent">{fmtNum(totalAdjusted)}</span>
+          </div>
+          <div className="tr-table-footer-item">
+            <span className="tr-table-footer-label">Voucher Amt</span>
+            <span className="tr-table-footer-value">{fmtNum(voucherAmount)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VOUCHER SUMMARY  (sidebar card — same visual family as TransactionSummary)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function VoucherSummary({ voucherAmount, totalAdjusted, onAccount }) {
+  return (
+    <div className="tr-summary-card">
+      <div className="tr-section-title">Voucher Summary</div>
+
+      <div className="tr-summary-row">
+        <span className="tr-summary-row-label">Voucher Amount</span>
+        <span className="tr-summary-row-value tr-amount">{fmt(voucherAmount)}</span>
+      </div>
+
+      <div className="tr-summary-row">
+        <span className="tr-summary-row-label">Adjusted Against Bills</span>
+        <span className="tr-summary-row-value tr-amount minus">- {fmt(totalAdjusted)}</span>
+      </div>
+
+      <div className="tr-summary-divider" />
+
+      <div className="tr-summary-net">
+        <span className="tr-summary-net-label">On Account (Advance)</span>
+        <span className="tr-summary-net-value">{fmt(onAccount)}</span>
+      </div>
     </div>
   );
 }

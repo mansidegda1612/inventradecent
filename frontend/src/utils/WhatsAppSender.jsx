@@ -1,30 +1,51 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// WhatsAppSender.js
+// WhatsAppSender.jsx
 // Generic, reusable WhatsApp sender — works from any screen (Sales, Purchase, etc.)
 //
 // USAGE:
-//   import { sendWhatsApp, buildUPILink, buildBillMessage } from "../utils/WhatsAppSender";
+//   import { sendWhatsApp, buildBillMessage } from "../utils/WhatsAppSender";
 //
-//   const message = buildBillMessage({ customerName, billNo, amount: finalAmount });
-//   await sendWhatsApp({ phone: customerPhone, message, pdfBlob, fileName: `Bill-${billNo}.pdf` });
+//   await sendWhatsApp({
+//     phone: customerPhone,       // optional — popup asks if missing
+//     billNo: data.bill_no,
+//     amount: data.final_amount,
+//     customerName,
+//     pdfBlob,                    // optional
+//     fileName: `Bill-${billNo}.pdf`,
+//   });
 //
 // BEHAVIOUR:
-//   - phone passed         -> sends straight away (no popup)
-//   - phone NOT passed     -> shows a phone-number popup (built right here, no
-//                             React/Modal dependency needed) and sends after submit
-//   - pdfBlob passed       -> attempts native share sheet (navigator.share with
-//                             files) so the PDF + text land together in WhatsApp
-//                             on supported mobile browsers
-//   - share not supported  -> falls back to wa.me text-only link, and downloads
-//                             the PDF separately so the user can attach manually
+//   - Builds a valid UPI deep link (upi://pay?...) — see notes below on why the
+//     old version silently failed for some UPI apps
+//   - phone passed     -> sends straight away (no popup)
+//   - phone NOT passed -> shows a themed phone-number popup and sends after submit
+//   - pdfBlob passed   -> attempts native share sheet (mobile browsers)
+//   - share not supported -> falls back to WhatsApp Web (text + PDF download)
+//
+// NOTE ON "upi://" IN A CHAT MESSAGE:
+//   WhatsApp only auto-links http(s) URLs. A raw "upi://pay?..." string typed
+//   into a message will NOT be tappable for the recipient — it just shows as
+//   plain text. To actually get a tappable "Pay Now" link you need a real
+//   https:// URL (short link) that redirects to this UPI intent — that's what
+//   the original /pay/create backend call was meant to do. Wire that up when
+//   the endpoint exists (see createPayLink below); until then this still
+//   produces a *correct* upi:// string, but treat it as "works when tapped
+//   from a UPI app / QR" rather than "tappable straight out of WhatsApp".
 // ─────────────────────────────────────────────────────────────────────────────
+
+import { useState, useRef, useEffect } from "react";
+import { createRoot } from "react-dom/client";
+// Adjust this import path to wherever your shared UI lives in the project
+// (the file that exports Modal, Field, Btn — same one used in index.jsx).
+import { Modal, Field, Btn } from "../components/ui";
+import { C } from "../utils/theme";
 
 // ── STATIC COMPANY CONFIG ────────────────────────────────────────────────────
 // TODO (future scope): fetch this from a company-settings API instead of
 // hardcoding it here, once that table/endpoint exists.
 export const COMPANY_CONFIG = {
-  name: "Inventra Decnet",
-  upiId: "mansidegda@okhdfcbank",
+  name: "Inventra Decent",
+  upiId: "darshitbhaliya0@okicici",
   fromMobile: "6353397539", // reserved for future WhatsApp Business API integration
 };
 
@@ -36,131 +57,210 @@ export function normalizePhone(phone) {
   return clean;
 }
 
-// ── UPI link ──────────────────────────────────────────────────────────────
-export function buildUPILink(amount, note = "", opts = {}) {
-  const payeeUpiId = opts.payeeUpiId || COMPANY_CONFIG.upiId;
-  const payeeName = opts.payeeName || COMPANY_CONFIG.name;
+// ── build a correct UPI deep link ───────────────────────────────────────
+// IMPORTANT: never build this with URLSearchParams. URLSearchParams.toString()
+// encodes spaces as "+", but the UPI intent spec (and most bank/PSP apps)
+// expect "%20". A "+" in `pn` (payee name) or `tn` (note) either shows up
+// literally in the app's confirmation screen or gets the whole intent
+// rejected as malformed, depending on the app. Some merchant-flavoured apps
+// are lenient about "+" — which is exactly why this looked like it "only
+// worked for merchant" links. Building the query string manually with
+// encodeURIComponent avoids this entirely.
+function buildUpiUrl({ billNo, amount, customerName }) {
+  const amt = Number(amount);
+  if (!Number.isFinite(amt) || amt <= 0) {
+    console.error("buildUpiUrl: invalid amount", amount);
+    return "";
+  }
 
-  const params = new URLSearchParams({
-    pa: payeeUpiId,
-    pn: payeeName,
-    am: Number(amount).toFixed(2),
-    cu: "INR",
-    tn: note || "Payment",
-  });
+  const params = {
+    pa: COMPANY_CONFIG.upiId,                    // payee VPA
+    pn: COMPANY_CONFIG.name,                     // payee name
+    am: amt.toFixed(2),                          // amount, 2 decimals
+    cu: "INR",                                   // currency
+    tn: `${billNo}`,                        // transaction note
+    // tr = unique transaction reference. Recommended by the UPI spec so
+    // re-sending the same bill (e.g. customer asks twice) doesn't get
+    // flagged as a duplicate/replay by the receiving app.
+    tr: `${billNo}-${Date.now()}`,
+  };
 
-  return `upi://pay?${params.toString()}`;
+  const qs = Object.entries(params)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
+
+  return `upi://pay?${qs}`;
+}
+
+// ── create pay link ───────────────────────────────────────────────────────
+// Calls POST /pay/create to get a clean, tappable short URL like
+// https://yourapp.com/pay/INV-0009 which server-side redirects into the UPI
+// intent above. Falls back to the raw UPI intent if the backend call fails
+// or the endpoint doesn't exist yet.
+async function createPayLink({ billNo, amount, customerName }) {
+  const upiUrl = buildUpiUrl({ billNo, amount, customerName });
+
+  // try {
+  //   const res = await fetch("/pay/create", {
+  //     method: "POST",
+  //     headers: { "Content-Type": "application/json" },
+  //     body: JSON.stringify({ billNo, amount, customerName, upiUrl }),
+  //   });
+  //   if (res.ok) {
+  //     const data = await res.json();
+  //     if (data?.url) return data.url;
+  //   }
+  // } catch (err) {
+  //   console.warn("createPayLink: /pay/create unavailable, using raw UPI link:", err);
+  // }
+
+  return upiUrl;
 }
 
 // ── message text ──────────────────────────────────────────────────────────
-export function buildBillMessage({ customerName, billNo, amount, upiLink, companyName }) {
+export function buildBillMessage({ customerName, billNo, amount, payUrl, companyName }) {
   const company = companyName || COMPANY_CONFIG.name;
-  const link = upiLink || buildUPILink(amount, billNo);
 
   return (
     `Hi ${customerName || ""},\n\n` +
     `Your bill from *${company}* is ready.\n` +
-    `Bill No: ${billNo}\n` +
-    `Amount: ₹${Number(amount).toFixed(2)}\n\n` +
-    `Tap below to pay instantly via any UPI app:\n${link}\n\n` +
-    `Thank you for your business!`
+    `Bill No: *${billNo}*\n` +
+    `Amount: *₹${Number(amount).toFixed(2)}*\n\n` +
+    `Pay Now 👉 ${payUrl}\n\n` +
+    `Thank you for your business! 🙏`
   );
 }
 
-// ── internal: tiny vanilla-DOM popup for phone entry ────────────────────
-// No React/Modal dependency, so this file stays usable from anywhere.
-// Returns a Promise<string|null> — null if the user cancels.
+// ── themed phone-entry popup (React, uses project's Modal/Field/Btn) ─────
+function PhonePopup({ onSubmit, onCancel }) {
+  const [phone, setPhone] = useState("");
+  const [error, setError] = useState("");
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const submit = () => {
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 10) {
+      setError("Enter a valid 10-digit WhatsApp number");
+      return;
+    }
+    onSubmit(digits);
+  };
+
+  return (
+    <Modal open onClose={onCancel} title="Send via WhatsApp" width={360}>
+      <Field label="Customer's WhatsApp number" required>
+        <input
+          ref={inputRef}
+          type="tel"
+          value={phone}
+          placeholder="e.g. 9876543210"
+          onChange={(e) => {
+            setPhone(e.target.value);
+            setError("");
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+            if (e.key === "Escape") onCancel();
+          }}
+          style={{
+            width: "100%",
+            padding: "8px 10px",
+            borderRadius: 8,
+            border: `1.5px solid ${error ? C.red : C.border}`,
+            fontSize: 13.5,
+            fontFamily: "inherit",
+            outline: "none",
+            boxSizing: "border-box",
+            color: C.text,
+            background: C.card,
+          }}
+        />
+        {error && (
+          <div style={{ color: C.red, fontSize: 11.5, marginTop: 6, fontWeight: 600 }}>
+            {error}
+          </div>
+        )}
+      </Field>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+        <Btn variant="ghost" onClick={onCancel}>
+          Cancel
+        </Btn>
+        <Btn onClick={submit} style={{ background: "#25D366" }}>
+          Send
+        </Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// Mounts the themed popup into a throwaway container so this file stays
+// callable from anywhere (not just inside a mounted React tree).
 function askForPhonePopup() {
   return new Promise((resolve) => {
-    const overlay = document.createElement("div");
-    overlay.style.cssText = `
-      position: fixed; inset: 0; background: rgba(0,0,0,0.45);
-      display: flex; align-items: center; justify-content: center;
-      z-index: 99999; font-family: inherit;
-    `;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
 
-    const box = document.createElement("div");
-    box.style.cssText = `
-      background: #fff; border-radius: 10px; padding: 24px;
-      width: 320px; box-shadow: 0 8px 30px rgba(0,0,0,0.25);
-    `;
-
-    box.innerHTML = `
-      <div style="font-weight:600; font-size:16px; margin-bottom:12px; color:#111;">
-        Send via WhatsApp
-      </div>
-      <div style="font-size:13px; color:#555; margin-bottom:10px;">
-        No phone number on file. Enter the customer's WhatsApp number:
-      </div>
-      <input id="wa-phone-input" type="tel" placeholder="e.g. 9876543210"
-        style="width:100%; padding:8px 10px; border:1px solid #ccc; border-radius:6px;
-               font-size:14px; margin-bottom:16px; box-sizing:border-box;" />
-      <div style="display:flex; justify-content:flex-end; gap:8px;">
-        <button id="wa-cancel-btn" style="padding:7px 14px; border:1px solid #ccc;
-          background:#fff; border-radius:6px; cursor:pointer; font-size:13px;">Cancel</button>
-        <button id="wa-send-btn" style="padding:7px 14px; border:none;
-          background:#25D366; color:#fff; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600;">Send</button>
-      </div>
-    `;
-
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-
-    const input = box.querySelector("#wa-phone-input");
-    input.focus();
-
-    const cleanup = () => document.body.removeChild(overlay);
-
-    box.querySelector("#wa-cancel-btn").onclick = () => {
-      cleanup();
-      resolve(null);
+    const cleanup = () => {
+      root.unmount();
+      container.remove();
     };
 
-    const submit = () => {
-      const val = input.value.trim();
-      cleanup();
-      resolve(val || null);
-    };
-
-    box.querySelector("#wa-send-btn").onclick = submit;
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") submit();
-      if (e.key === "Escape") {
-        cleanup();
-        resolve(null);
-      }
-    });
+    root.render(
+      <PhonePopup
+        onSubmit={(phone) => {
+          cleanup();
+          resolve(phone);
+        }}
+        onCancel={() => {
+          cleanup();
+          resolve(null);
+        }}
+      />
+    );
   });
+}
+
+// ── is this an actual mobile device? ──────────────────────────────────────
+// Desktop Chrome/Edge also implement navigator.share, but there it opens the
+// OS-level "Share" panel (Mail, Teams, Nearby Sharing, Phone Link, etc.) —
+// not WhatsApp — so we only want the native-share path on real mobile
+// devices, where that sheet is the phone's compact app picker with WhatsApp
+// one tap away.
+function isMobileDevice() {
+  if (typeof navigator === "undefined") return false;
+  if (navigator.userAgentData?.mobile != null) return navigator.userAgentData.mobile;
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
 }
 
 // ── internal: actually dispatch the message (+ optional PDF) ────────────
 async function dispatch(phone, message, pdfBlob, fileName) {
   const cleanPhone = normalizePhone(phone);
 
-  // Try native share sheet first — this is the only way to get text + PDF
-  // into WhatsApp together. Only works on supported mobile browsers (HTTPS,
-  // Web Share API Level 2 with `files` support).
-  if (pdfBlob && navigator.share && navigator.canShare) {
+  // Native share sheet — mobile only (see isMobileDevice above). This is the
+  // only way to get text + PDF into WhatsApp together in one step.
+  if (pdfBlob && isMobileDevice() && navigator.share && navigator.canShare) {
     try {
       const file = new File([pdfBlob], fileName || "bill.pdf", { type: "application/pdf" });
       if (navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          text: message,
-        });
-        return; // user picked WhatsApp (or any app) from the native share sheet
+        await navigator.share({ files: [file], text: message });
+        return;
       }
     } catch (err) {
-      // user cancelled the share sheet, or it failed — fall through to wa.me below
       console.warn("navigator.share failed or was cancelled, falling back:", err);
     }
   }
 
-  // Fallback: wa.me text-only link.
+  // Fallback: open WhatsApp Web directly to the chat with message pre-filled
   const encodedMsg = encodeURIComponent(message);
   const url = cleanPhone
-    ? `https://wa.me/${cleanPhone}?text=${encodedMsg}`
-    : `https://wa.me/?text=${encodedMsg}`;
+    ? `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodedMsg}`
+    : `https://web.whatsapp.com/send?text=${encodedMsg}`;
   window.open(url, "_blank");
 
   // If there's a PDF and we couldn't share it natively, download it so the
@@ -181,23 +281,27 @@ async function dispatch(phone, message, pdfBlob, fileName) {
  * Main entry point. Call this from any screen.
  *
  * @param {object} p
- * @param {string} [p.phone]    - customer phone. If omitted, a popup asks for it.
- * @param {string} p.message    - full message text (build with buildBillMessage)
- * @param {Blob}   [p.pdfBlob]  - PDF blob generated by GSTInvoicePrinter (see note below)
- * @param {string} [p.fileName] - filename for the PDF, e.g. "Bill-INV203.pdf"
+ * @param {string} [p.phone]        - customer phone. If omitted, a popup asks for it.
+ * @param {string} p.billNo         - bill number (used to create pay link)
+ * @param {number} p.amount         - final bill amount
+ * @param {string} [p.customerName] - shown in the message greeting
+ * @param {Blob}   [p.pdfBlob]      - PDF blob from GSTInvoicePrinter (optional)
+ * @param {string} [p.fileName]     - PDF filename, e.g. "Bill-INV203.pdf"
  */
-export async function sendWhatsApp({ phone, message, pdfBlob, fileName }) {
-  if (!message) {
-    console.error("sendWhatsApp: message is required");
+export async function sendWhatsApp({ phone, billNo, amount, customerName, pdfBlob, fileName }) {
+  if (!billNo || amount == null) {
+    console.error("sendWhatsApp: billNo and amount are required");
     return false;
   }
+
+  const payUrl = await createPayLink({ billNo, amount, customerName });
+  const message = buildBillMessage({ customerName, billNo, amount, payUrl });
 
   if (phone) {
     await dispatch(phone, message, pdfBlob, fileName);
     return true;
   }
 
-  // No phone passed -> popup, asks here, send happens from this same utility
   const entered = await askForPhonePopup();
   if (!entered) return false; // user cancelled
 
