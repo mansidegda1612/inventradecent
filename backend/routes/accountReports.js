@@ -7,6 +7,18 @@
  *   GET /api/reports/accounts/outstanding?from=&to=
  *   GET /api/reports/accounts/supplier-balance?from=&to=
  *   GET /api/reports/accounts/summary?from=&to=
+ *   GET /api/reports/accounts/accounts-list
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * UPDATE: all balance/outstanding/payable/summary calculations now also
+ * factor in Cash/Bank Receipt (CR) and Cash/Bank Payment (CP) vouchers,
+ * not just SI/PI bills. Ledger direction matches how transaction.js posts
+ * to customer.debit/customer.credit:
+ *   SI → debit ↑   (receivable increases)
+ *   PI → credit ↑  (payable increases)
+ *   CR → credit ↑, closing ↓  (a receipt reduces what they owe us)
+ *   CP → debit ↑,  closing ↑  (a payment reduces what we owe them)
+ * ─────────────────────────────────────────────────────────────────────────
  */
 const router = require("express").Router();
 const db   = require("../config/db");
@@ -26,7 +38,7 @@ async function q(sql, params = []) {
 // ─── GET /ledger ─────────────────────────────────────────────────────────────
 // Returns:
 //   account  — account master row
-//   txns     — all transactions for this account in the date range
+//   txns     — all transactions/vouchers for this account in the date range
 //   opening  — opening balance
 //   closing  — running closing balance
 
@@ -53,11 +65,16 @@ router.get("/reports/accounts/ledger", async (req, res) => {
       : "";
     const dateParams = from && to ? [from, to] : [];
 
-    // Fetch transactions
+    // Fetch transactions — SI/PI bills AND CR/CP vouchers, same row shape.
+    // payment_mode/ref_no/narration are NULL for SI/PI, bill_no/isgstbill
+    // are simply not applicable (NULL) for CR/CP — harmless either way.
     const txns = await q(
       `SELECT t.id,
               t.trans_type,
               t.cash_debit,
+              t.payment_mode,
+              t.ref_no,
+              t.narration,
               DATE_FORMAT(t.date, '%Y-%m-%d') AS date,
               t.bill_no,
               t.isgstbill,
@@ -74,6 +91,8 @@ router.get("/reports/accounts/ledger", async (req, res) => {
     );
 
     // Compute running balance starting from opening
+    // Direction matches customer.debit/credit posting in transaction.js:
+    //   SI → +   PI → -   CR → -   CP → +
     let running = Number(acc.opening) || 0;
     const txnsWithBalance = txns.map(t => {
       const amt = Number(t.final_amount) || 0;
@@ -81,6 +100,10 @@ router.get("/reports/accounts/ledger", async (req, res) => {
         running += amt;   // sale increases receivable (Dr to customer)
       } else if (t.trans_type === "PI") {
         running -= amt;   // purchase increases payable
+      } else if (t.trans_type === "CR") {
+        running -= amt;   // receipt reduces what they owe us
+      } else if (t.trans_type === "CP") {
+        running += amt;   // payment reduces what we owe them
       }
       return { ...t, running_balance: parseFloat(running.toFixed(2)) };
     });
@@ -98,15 +121,17 @@ router.get("/reports/accounts/ledger", async (req, res) => {
 
 // ─── GET /outstanding ────────────────────────────────────────────────────────
 // Returns all customer accounts with their outstanding balance.
-// Outstanding = opening + sum(sales final_amount) in period
+// Outstanding = opening + period_sales(SI) - period_receipts(CR)
 // Groups: customers are those whose `group` row name contains "customer"
-//         (or group.id = 15 based on your data — we'll use group name match)
 
 router.get("/reports/accounts/outstanding", async (req, res) => {
   try {
     const { from, to } = req.query;
     const dateFilter = from && to
       ? "AND DATE(t.date) BETWEEN ? AND ?"
+      : "";
+    const dateFilterR = from && to
+      ? "AND DATE(tr.date) BETWEEN ? AND ?"
       : "";
     const dateParams = from && to ? [from, to] : [];
 
@@ -121,6 +146,11 @@ router.get("/reports/accounts/outstanding", async (req, res) => {
               COALESCE(SUM(
                 CASE WHEN t.trans_type = 'SI' ${dateFilter} THEN t.final_amount ELSE 0 END
               ), 0)                               AS period_sales,
+              COALESCE((
+                SELECT SUM(tr.final_amount)
+                FROM transaction tr
+                WHERE tr.customer_id = c.id AND tr.trans_type = 'CR' ${dateFilterR}
+              ), 0)                               AS period_receipts,
               COALESCE(c.closing, 0)              AS closing_balance
        FROM   customer c
        LEFT JOIN \`group\` g ON g.id = c.group
@@ -131,15 +161,18 @@ router.get("/reports/accounts/outstanding", async (req, res) => {
                  c.opening, c.closing
       HAVING closing_balance > 0 
        ORDER  BY c.name`,
-      [...dateParams]
+      [...dateParams, ...dateParams]
     );
 
-    // outstanding = opening + period_sales  (positive = receivable)
+    // outstanding = opening + period_sales - period_receipts  (positive = receivable)
     const data = rows.map(r => ({
       ...r,
-      opening:      parseFloat(r.opening),
-      period_sales: parseFloat(r.period_sales),
-      outstanding:  parseFloat((Number(r.opening) + Number(r.period_sales)).toFixed(2)),
+      opening:         parseFloat(r.opening),
+      period_sales:    parseFloat(r.period_sales),
+      period_receipts: parseFloat(r.period_receipts),
+      outstanding:     parseFloat(
+        (Number(r.opening) + Number(r.period_sales) - Number(r.period_receipts)).toFixed(2)
+      ),
     }));
 
     const total_outstanding = data.reduce((s, r) => s + r.outstanding, 0);
@@ -153,12 +186,16 @@ router.get("/reports/accounts/outstanding", async (req, res) => {
 
 // ─── GET /supplier-balance ───────────────────────────────────────────────────
 // Returns all supplier accounts with payable balance.
+// Payable magnitude = |opening| + period_purchases(PI) - period_payments(CP)
 
 router.get("/reports/accounts/supplier-balance", async (req, res) => {
   try {
     const { from, to } = req.query;
     const dateFilter = from && to
       ? "AND DATE(t.date) BETWEEN ? AND ?"
+      : "";
+    const dateFilterP = from && to
+      ? "AND DATE(tp.date) BETWEEN ? AND ?"
       : "";
     const dateParams = from && to ? [from, to] : [];
 
@@ -173,6 +210,11 @@ router.get("/reports/accounts/supplier-balance", async (req, res) => {
               COALESCE(SUM(
                 CASE WHEN t.trans_type = 'PI' ${dateFilter} THEN t.final_amount ELSE 0 END
               ), 0)                               AS period_purchases,
+              COALESCE((
+                SELECT SUM(tp.final_amount)
+                FROM transaction tp
+                WHERE tp.customer_id = c.id AND tp.trans_type = 'CP' ${dateFilterP}
+              ), 0)                               AS period_payments,
               COALESCE(c.closing, 0)              AS closing_balance
        FROM   customer c
        LEFT JOIN \`group\` g ON g.id = c.group
@@ -183,17 +225,20 @@ router.get("/reports/accounts/supplier-balance", async (req, res) => {
                  c.opening, c.closing
        HAVING closing_balance < 0 
        ORDER  BY c.name`,
-      [...dateParams]
+      [...dateParams, ...dateParams]
     );
 
-    const data = rows.map(r => ({
-      ...r,
-      opening:          parseFloat(r.opening),
-      period_purchases: parseFloat(r.period_purchases),
-      payable: (parseFloat(
-        (Math.abs(Number(r.opening)) + Number(r.period_purchases)).toFixed(2)
-      )) *(-1),
-    }));
+    const data = rows.map(r => {
+      const magnitude =
+        Math.abs(Number(r.opening)) + Number(r.period_purchases) - Number(r.period_payments);
+      return {
+        ...r,
+        opening:          parseFloat(r.opening),
+        period_purchases: parseFloat(r.period_purchases),
+        period_payments:  parseFloat(r.period_payments),
+        payable: parseFloat(magnitude.toFixed(2)) * -1,
+      };
+    });
 
     const total_payable = data.reduce((s, r) => s + r.payable, 0);
 
@@ -205,8 +250,7 @@ router.get("/reports/accounts/supplier-balance", async (req, res) => {
 });
 
 // ─── GET /summary ─────────────────────────────────────────────────────────────
-// Quick stats panel: total sales, total purchases, total outstanding, total payable
-// within a date range.
+// Quick stats panel: total sales, purchases, receipts, payments within range.
 
 router.get("/reports/accounts/summary", async (req, res) => {
   try {
@@ -220,17 +264,28 @@ router.get("/reports/accounts/summary", async (req, res) => {
       `SELECT
          COALESCE(SUM(CASE WHEN trans_type='SI' ${dateFilter} THEN final_amount END), 0) AS total_sales,
          COALESCE(SUM(CASE WHEN trans_type='PI' ${dateFilter} THEN final_amount END), 0) AS total_purchases,
+         COALESCE(SUM(CASE WHEN trans_type='CR' ${dateFilter} THEN final_amount END), 0) AS total_receipts,
+         COALESCE(SUM(CASE WHEN trans_type='CP' ${dateFilter} THEN final_amount END), 0) AS total_payments,
          COUNT(CASE WHEN trans_type='SI' ${dateFilter} THEN 1 END)                       AS sale_count,
-         COUNT(CASE WHEN trans_type='PI' ${dateFilter} THEN 1 END)                       AS purchase_count
+         COUNT(CASE WHEN trans_type='PI' ${dateFilter} THEN 1 END)                       AS purchase_count,
+         COUNT(CASE WHEN trans_type='CR' ${dateFilter} THEN 1 END)                       AS receipt_count,
+         COUNT(CASE WHEN trans_type='CP' ${dateFilter} THEN 1 END)                       AS payment_count
        FROM transaction`,
-      [...dateParams, ...dateParams]
+      [
+        ...dateParams, ...dateParams, ...dateParams, ...dateParams,
+        ...dateParams, ...dateParams, ...dateParams, ...dateParams,
+      ]
     );
 
     res.json({
       total_sales:      parseFloat(stats.total_sales),
       total_purchases:  parseFloat(stats.total_purchases),
+      total_receipts:   parseFloat(stats.total_receipts),
+      total_payments:   parseFloat(stats.total_payments),
       sale_count:       stats.sale_count,
       purchase_count:   stats.purchase_count,
+      receipt_count:    stats.receipt_count,
+      payment_count:    stats.payment_count,
     });
   } catch (err) {
     console.error("Summary error:", err);
@@ -239,7 +294,7 @@ router.get("/reports/accounts/summary", async (req, res) => {
 });
 
 // ─── GET /accounts-list ──────────────────────────────────────────────────────
-// All customer + supplier accounts for dropdowns
+// All customer + supplier accounts for dropdowns (unchanged)
 
 router.get("/reports/accounts/accounts-list", async (_req, res) => {
   try {

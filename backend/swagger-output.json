@@ -1538,7 +1538,7 @@
                 "trans_type": {
                   "example": "any"
                 },
-                "cash_debit": {
+                "payment_mode": {
                   "example": "any"
                 },
                 "bill_no": {
@@ -1550,19 +1550,25 @@
                 "customer_id": {
                   "example": "any"
                 },
-                "customer_name_cash": {
+                "ref_no": {
                   "example": "any"
                 },
-                "isGSTBill": {
-                  "example": "any"
-                },
-                "expenses": {
+                "narration": {
                   "example": "any"
                 },
                 "final_amount": {
                   "example": "any"
                 },
-                "items": {
+                "adjustments": {
+                  "example": "any"
+                },
+                "success": {
+                  "example": "any"
+                },
+                "message": {
+                  "example": "any"
+                },
+                "data": {
                   "example": "any"
                 }
               }
@@ -1594,6 +1600,45 @@
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/transactions/pending-bills": {
+      "get": {
+        "tags": [
+          "Transactions"
+        ],
+        "description": "",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "query",
+            "type": "string"
+          },
+          {
+            "name": "bill_type",
+            "in": "query",
+            "type": "string"
+          },
+          {
+            "name": "exclude_voucher_id",
+            "in": "query",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
           },
           "401": {
             "description": "Unauthorized"
@@ -1654,7 +1699,7 @@
                 "trans_type": {
                   "example": "any"
                 },
-                "cash_debit": {
+                "payment_mode": {
                   "example": "any"
                 },
                 "bill_no": {
@@ -1666,19 +1711,25 @@
                 "customer_id": {
                   "example": "any"
                 },
-                "customer_name_cash": {
+                "ref_no": {
                   "example": "any"
                 },
-                "isGSTBill": {
-                  "example": "any"
-                },
-                "expenses": {
+                "narration": {
                   "example": "any"
                 },
                 "final_amount": {
                   "example": "any"
                 },
-                "items": {
+                "adjustments": {
+                  "example": "any"
+                },
+                "success": {
+                  "example": "any"
+                },
+                "message": {
+                  "example": "any"
+                },
+                "data": {
                   "example": "any"
                 }
               }

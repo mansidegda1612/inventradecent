@@ -6,8 +6,8 @@ router.use(auth);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/transactions
-// List all bills with filters: page, limit, search, customer_id, from, to, type
-// type = "sale" | "purchase"
+// List all bills/vouchers with filters: page, limit, search, customer_id, from, to, type
+// type = "SI" | "PI" | "CR" | "CP"   (CR = Cash/Bank Receipt, CP = Cash/Bank Payment)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/transactions/", async (req, res) => {
   // #swagger.tags = ['Transactions']
@@ -32,6 +32,8 @@ router.get("/transactions/", async (req, res) => {
     if (to) { where += " AND DATE(t.date) <= ?"; params.push(to); }
     if (type === "SI") { where += " AND t.trans_type = 'SI'"; }
     if (type === "PI") { where += " AND t.trans_type = 'PI'"; }
+    if (type === "CR") { where += " AND t.trans_type = 'CR'"; }   // NEW — Cash/Bank Receipt
+    if (type === "CP") { where += " AND t.trans_type = 'CP'"; }   // NEW — Cash/Bank Payment
 
     // Total count
     const [countRows] = await pool.query(
@@ -45,12 +47,17 @@ router.get("/transactions/", async (req, res) => {
     );
 
     // Main list — aggregate item totals from transaction_items
+    // (CR/CP rows have no transaction_items, so item_count/CGST/SGST
+    //  simply come back as 0 for them — no special-casing needed here)
     const [rows] = await pool.query(
       `SELECT
          t.id               AS transaction_id,
          t.trans_type,
          t.cash_debit AS cord,
          IF(t.cash_debit = "C" ,"Cash" , "Debit") AS cash_debit,
+         t.payment_mode,
+         t.ref_no,
+         t.narration,
          t.bill_no,
          t.date, 
          t.customer_id,
@@ -94,6 +101,7 @@ router.get("/transactions/", async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/transactions/next-bill-no
 // Auto-generate the next bill number  e.g. BILL-0042
+// (Unchanged — SI/PI only, exactly as before)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/transactions/next-bill-no", async (req, res) => {
   // #swagger.tags = ['Transactions']
@@ -115,8 +123,62 @@ router.get("/transactions/next-bill-no", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GET /api/transactions/pending-bills   ⟵ NEW
+// Outstanding SI (or PI) bills for a party, with live pending_amount for
+// bill-wise adjustment on a CR/CP voucher.
+//
+// Query: customer_id (required), bill_type = "SI" | "PI" (required),
+//        exclude_voucher_id (optional — pass the voucher's own id while
+//        editing, so its own prior adjustments are added back as available)
+//
+// NOTE: registered ABOVE the "/transactions/:transaction_id" route below,
+// same reason "next-bill-no" already sits above it — otherwise Express
+// would treat "pending-bills" as a :transaction_id value.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/transactions/pending-bills", async (req, res) => {
+  // #swagger.tags = ['Transactions']
+  const { customer_id, bill_type, exclude_voucher_id = 0 } = req.query;
+
+  if (!customer_id || !["SI", "PI"].includes(bill_type)) {
+    return res.status(400).json({
+      success: false,
+      message: "customer_id and bill_type ('SI' or 'PI') are required",
+    });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         t.id AS transaction_id,
+         t.bill_no,
+         t.date,
+         t.final_amount,
+         IFNULL(SUM(
+           CASE WHEN ta.voucher_transaction_id <> ? THEN ta.adjusted_amount ELSE 0 END
+         ), 0) AS adjusted_amount
+       FROM \`transaction\` t
+       LEFT JOIN transaction_adjustments ta ON ta.bill_transaction_id = t.id
+       WHERE t.customer_id = ? AND t.trans_type = ?
+       GROUP BY t.id
+       HAVING (t.final_amount - adjusted_amount) > 0.01
+       ORDER BY t.date ASC`,
+      [exclude_voucher_id, customer_id, bill_type]
+    );
+
+    const data = rows.map((r) => ({
+      ...r,
+      pending_amount: parseFloat(r.final_amount) - parseFloat(r.adjusted_amount),
+    }));
+
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/transactions/:transaction_id
-// Full bill detail — master header + all line items
+// Full detail — master header + line items (SI/PI) + adjustments (CR/CP)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/transactions/:transaction_id", async (req, res) => {
   // #swagger.tags = ['Transactions']
@@ -143,7 +205,7 @@ router.get("/transactions/:transaction_id", async (req, res) => {
     if (!master.length)
       return res.status(404).json({ success: false, message: "Transaction not found" });
 
-    // Line items
+    // Line items (SI/PI/SR/PR) — empty array for CR/CP, which is fine
     const [items] = await pool.query(
       `SELECT
          ti.*,
@@ -157,9 +219,24 @@ router.get("/transactions/:transaction_id", async (req, res) => {
       [tid]
     );
 
+    // Bill-wise adjustments (CR/CP) — empty array for SI/PI/SR/PR, fine  ⟵ NEW
+    const [adjustments] = await pool.query(
+      `SELECT
+         ta.id,
+         ta.bill_transaction_id,
+         ta.adjusted_amount,
+         bt.bill_no       AS bill_bill_no,
+         bt.date          AS bill_date,
+         bt.final_amount  AS bill_final_amount
+       FROM transaction_adjustments ta
+       JOIN \`transaction\` bt ON bt.id = ta.bill_transaction_id
+       WHERE ta.voucher_transaction_id = ?`,
+      [tid]
+    );
+
     res.json({
       success: true,
-      data: { ...master[0], items },
+      data: { ...master[0], items, adjustments },
     });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
@@ -168,28 +245,131 @@ router.get("/transactions/:transaction_id", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/transactions
-// Create a new bill (master + line items) in a single call
+// Create a new bill OR voucher — routed by trans_type:
+//   trans_type = "SI" | "PI" | "SR" | "PR"  → existing bill logic (UNCHANGED)
+//   trans_type = "CR" | "CP"                → new voucher logic (NEW)
 //
-// Body:
+// Bill body (unchanged):
 // {
-//   trans_type,        -- "SI" | "PI" | "SR" | "PR"
-//   cash_debit,      -- "D" | "C"
-//   bill_no,
-//   date,
-//   customer_id,
-//   taxable_amount,    -- total of all items (can be computed here or sent from client)
-//   discount,
-//   roundoff,
-//   final_amount,
-//   items: [
-//     { product_id, qty, rate, taxable_amount, CGST, SGST }
-//   ]
+//   trans_type, cash_debit, bill_no, date, customer_id,
+//   taxable_amount, discount, roundoff, final_amount,
+//   items: [ { product_id, qty, rate, taxable_amount, CGST, SGST } ]
 // }
+//
+// Voucher body (new):
+// {
+//   trans_type,          -- "CR" | "CP"
+//   payment_mode,        -- "Cash" | "Bank"
+//   bill_no, date, customer_id, ref_no, narration,
+//   final_amount,         -- total cash/bank amount received or paid
+//   adjustments: [ { bill_transaction_id, amount } ]
+// }
+// Ledger mapping (matches how SI/PI already post — debit/credit are running
+// ledger totals, not "who owes who"):
+//   SI → debit ↑   (invoicing a customer is a debit entry)
+//   PI → credit ↑  (being invoiced by a supplier is a credit entry)
+//   CR → credit ↑, closing ↓   (a receipt is a credit entry)
+//   CP → debit ↑,  closing ↑   (a payment is a debit entry)
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/transactions/", async (req, res) => {
   // #swagger.tags = ['Transactions']
+  const { trans_type } = req.body;
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // NEW — Cash/Bank Receipt (CR) / Cash/Bank Payment (CP)
+  // Fully separate code path. Returns before touching any SI/PI logic below.
+  // ═══════════════════════════════════════════════════════════════════════
+  if (trans_type === "CR" || trans_type === "CP") {
+    const {
+      payment_mode = "Cash",
+      bill_no, date, customer_id,
+      ref_no = "", narration = "",
+      final_amount,
+      adjustments = [],
+    } = req.body;
+
+    if (!bill_no || !customer_id || !final_amount) {
+      return res.status(400).json({
+        success: false,
+        message: "bill_no, customer_id and final_amount are required",
+      });
+    }
+
+    const totalAdjusted = adjustments.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
+    if (totalAdjusted > parseFloat(final_amount) + 0.01) {
+      return res.status(400).json({
+        success: false,
+        message: "Total adjusted amount cannot exceed the voucher amount",
+      });
+    }
+
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      const [masterResult] = await conn.query(
+        `INSERT INTO \`transaction\`
+           (trans_type, cash_debit, payment_mode, date, bill_no, customer_id,
+            taxable_amount, ROUNDOFF, discount, final_amount, ref_no, narration,
+            userid, creation_date, updation_date)
+         VALUES (?,?,?,?,?,?,0,0,0,?,?,?,?,NOW(),NOW())`,
+        [
+          trans_type, "D", payment_mode,
+          date || new Date(), bill_no, customer_id,
+          parseFloat(final_amount), ref_no, narration,
+          req.user.id,
+        ]
+      );
+      const transaction_id = masterResult.insertId;
+
+      for (const adj of adjustments) {
+        const amt = parseFloat(adj.amount) || 0;
+        if (amt <= 0) continue;
+        await conn.query(
+          `INSERT INTO transaction_adjustments
+             (voucher_transaction_id, bill_transaction_id, adjusted_amount,
+              creation_date, updation_date)
+           VALUES (?,?,?,NOW(),NOW())`,
+          [transaction_id, adj.bill_transaction_id, amt]
+        );
+      }
+
+      // Ledger effect (double-entry consistent with how SI/PI already post):
+      // SI → debit ↑ (invoicing a customer is a debit entry)
+      // PI → credit ↑ (being invoiced by a supplier is a credit entry)
+      // CR (receipt from customer) → a receipt is a credit entry → credit ↑, closing ↓
+      // CP (payment to supplier)   → a payment is a debit entry  → debit ↑,  closing ↑
+      if (trans_type === "CR") {
+        await conn.query(
+          "UPDATE customer SET credit = credit + ?, closing = closing - ? WHERE id = ?",
+          [final_amount, final_amount, customer_id]
+        );
+      } else {
+        await conn.query(
+          "UPDATE customer SET debit = debit + ?, closing = closing + ? WHERE id = ?",
+          [final_amount, final_amount, customer_id]
+        );
+      }
+
+      await conn.commit();
+      conn.release();
+      return res.status(201).json({
+        success: true,
+        message: "Voucher saved",
+        data: { transaction_id, bill_no },
+      });
+    } catch (e) {
+      await conn.rollback();
+      conn.release();
+      return res.status(500).json({ success: false, message: e.message });
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // EXISTING — SI / PI / SR / PR  (UNCHANGED from before)
+  // ═══════════════════════════════════════════════════════════════════════
   const {
-    trans_type, cash_debit = "D",
+    cash_debit = "D",
     bill_no, date, customer_id, customer_name_cash, isGSTBill,
     expenses,
     final_amount, items,
@@ -309,13 +489,133 @@ router.post("/transactions/", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUT /api/transactions/:transaction_id
-// Update a bill — reverses old stock/balance, deletes old items, inserts new
-// Body: same shape as POST
+// Update a bill OR voucher — routed by trans_type, same split as POST above.
 // ─────────────────────────────────────────────────────────────────────────────
 router.put("/transactions/:transaction_id", async (req, res) => {
   // #swagger.tags = ['Transactions']
+  const { trans_type } = req.body;
+  const tid = req.params.transaction_id;
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // NEW — Cash/Bank Receipt (CR) / Cash/Bank Payment (CP)
+  // ═══════════════════════════════════════════════════════════════════════
+  if (trans_type === "CR" || trans_type === "CP") {
+    const {
+      payment_mode = "Cash",
+      bill_no, date, customer_id,
+      ref_no = "", narration = "",
+      final_amount,
+      adjustments = [],
+    } = req.body;
+
+    if (!bill_no || !customer_id || !final_amount) {
+      return res.status(400).json({
+        success: false,
+        message: "bill_no, customer_id and final_amount are required",
+      });
+    }
+
+    const totalAdjusted = adjustments.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
+    if (totalAdjusted > parseFloat(final_amount) + 0.01) {
+      return res.status(400).json({
+        success: false,
+        message: "Total adjusted amount cannot exceed the voucher amount",
+      });
+    }
+
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      const [oldMaster] = await conn.query("SELECT * FROM `transaction` WHERE id = ?", [tid]);
+      if (!oldMaster.length) {
+        conn.release();
+        return res.status(404).json({ success: false, message: "Voucher not found" });
+      }
+      const old = oldMaster[0];
+
+      // Reverse old ledger effect (mirror image of the apply logic below)
+      if (old.trans_type === "CR") {
+        await conn.query(
+          "UPDATE customer SET credit = credit - ?, closing = closing + ? WHERE id = ?",
+          [old.final_amount, old.final_amount, old.customer_id]
+        );
+      } else if (old.trans_type === "CP") {
+        await conn.query(
+          "UPDATE customer SET debit = debit - ?, closing = closing - ? WHERE id = ?",
+          [old.final_amount, old.final_amount, old.customer_id]
+        );
+      }
+
+      // Drop old adjustment rows, insert new ones
+      await conn.query("DELETE FROM transaction_adjustments WHERE voucher_transaction_id = ?", [tid]);
+
+      // Update master row
+      await conn.query(
+        `UPDATE \`transaction\` SET
+           trans_type    = ?,
+           payment_mode  = ?,
+           date          = ?,
+           bill_no       = ?,
+           customer_id   = ?,
+           final_amount  = ?,
+           ref_no        = ?,
+           narration     = ?,
+           userid        = ?,
+           updation_date = NOW()
+         WHERE id = ?`,
+        [
+          trans_type, payment_mode,
+          date || new Date(), bill_no, customer_id,
+          parseFloat(final_amount), ref_no, narration,
+          req.user.id, tid,
+        ]
+      );
+
+      for (const adj of adjustments) {
+        const amt = parseFloat(adj.amount) || 0;
+        if (amt <= 0) continue;
+        await conn.query(
+          `INSERT INTO transaction_adjustments
+             (voucher_transaction_id, bill_transaction_id, adjusted_amount,
+              creation_date, updation_date)
+           VALUES (?,?,?,NOW(),NOW())`,
+          [tid, adj.bill_transaction_id, amt]
+        );
+      }
+
+      // Apply new ledger effect
+      if (trans_type === "CR") {
+        await conn.query(
+          "UPDATE customer SET credit = credit + ?, closing = closing - ? WHERE id = ?",
+          [final_amount, final_amount, customer_id]
+        );
+      } else {
+        await conn.query(
+          "UPDATE customer SET debit = debit + ?, closing = closing + ? WHERE id = ?",
+          [final_amount, final_amount, customer_id]
+        );
+      }
+
+      await conn.commit();
+      conn.release();
+      return res.json({
+        success: true,
+        message: "Voucher updated",
+        data: { transaction_id: tid },
+      });
+    } catch (e) {
+      await conn.rollback();
+      conn.release();
+      return res.status(500).json({ success: false, message: e.message });
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // EXISTING — SI / PI / SR / PR  (UNCHANGED from before)
+  // ═══════════════════════════════════════════════════════════════════════
   const {
-    trans_type, cash_debit = "D",
+    cash_debit = "D",
     bill_no, date, customer_id, customer_name_cash, isGSTBill,
     expenses,
     final_amount, items,
@@ -330,7 +630,6 @@ router.put("/transactions/:transaction_id", async (req, res) => {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
-    const tid = req.params.transaction_id;
 
     // ── Fetch old master (need old trans_type + customer for reversal) ────────
     const [oldMaster] = await conn.query(
@@ -472,7 +771,7 @@ router.put("/transactions/:transaction_id", async (req, res) => {
 
     await conn.commit();
     conn.release();
-    res.json({ success: true, message: "Transaction updated" , data: { "transaction_id" : req.params.transaction_id }, });
+    res.json({ success: true, message: "Transaction updated" , data: { "transaction_id" : tid }, });
   } catch (e) {
     await conn.rollback();
     conn.release();
@@ -482,7 +781,8 @@ router.put("/transactions/:transaction_id", async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DELETE /api/transactions/:transaction_id
-// Cancel a bill — reverses stock and customer balance, then deletes
+// Cancel a bill or voucher — reverses stock/ledger, then deletes.
+// SI/PI/SR/PR branches unchanged; CR/CP branch added.
 // ─────────────────────────────────────────────────────────────────────────────
 router.delete("/transactions/:transaction_id", async (req, res) => {
   // #swagger.tags = ['Transactions']
@@ -502,7 +802,7 @@ router.delete("/transactions/:transaction_id", async (req, res) => {
     }
     const master = masterRows[0];
 
-    // Fetch items for stock reversal
+    // Fetch items for stock reversal (empty for CR/CP — fine)
     const [items] = await conn.query(
       "SELECT * FROM transaction_items WHERE transaction_id = ?", [tid]
     );
@@ -522,7 +822,7 @@ router.delete("/transactions/:transaction_id", async (req, res) => {
       }
     }
 
-    // Reverse customer balance
+    // Reverse customer / voucher ledger balance
     if (master.trans_type === "SI") {
       await conn.query(
         "UPDATE customer SET debit = debit - ?, closing = closing - ? WHERE id = ?",
@@ -533,16 +833,30 @@ router.delete("/transactions/:transaction_id", async (req, res) => {
         "UPDATE customer SET credit = credit - ?, closing = closing + ? WHERE id = ?",
         [master.final_amount, master.final_amount, master.customer_id]
       );
+    } else if (master.trans_type === "CR") {          // NEW
+      // Reversing a receipt = undo the credit entry, closing goes back up
+      await conn.query(
+        "UPDATE customer SET credit = credit - ?, closing = closing + ? WHERE id = ?",
+        [master.final_amount, master.final_amount, master.customer_id]
+      );
+    } else if (master.trans_type === "CP") {           // NEW
+      // Reversing a payment = undo the debit entry, closing goes back down
+      await conn.query(
+        "UPDATE customer SET debit = debit - ?, closing = closing - ? WHERE id = ?",
+        [master.final_amount, master.final_amount, master.customer_id]
+      );
     }
 
-    // Delete items first (FK), then master
+    // Delete items first (FK), then master.
+    // transaction_adjustments rows (for CR/CP) clean up automatically via
+    // ON DELETE CASCADE on voucher_transaction_id — no manual delete needed.
     await conn.query("DELETE FROM transaction_items WHERE transaction_id = ?", [tid]);
     await conn.query("DELETE FROM cashcustdetail WHERE transaction_id = ?", [tid]);
     await conn.query("DELETE FROM `transaction` WHERE id = ?", [tid]);
 
     await conn.commit();
     conn.release();
-    res.json({ success: true, message: "Transaction deleted and stock reversed" });
+    res.json({ success: true, message: "Transaction deleted and stock/ledger reversed" });
   } catch (e) {
     await conn.rollback();
     conn.release();
