@@ -72,6 +72,7 @@
   margin-top: 20px; margin-bottom: 20px;
   display: flex; flex-direction: column;
   max-height: calc(100vh - 40px);
+  overflow: hidden; /* clip header/body to the rounded corners */
 }
 .ui-modal-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -87,9 +88,6 @@
 .ui-modal-body { padding: 22px; overflow-y: auto; }
 
 @media (max-width: 768px) {
-  /* Full-screen sheet instead of a centered box — nothing gets cut off
-     above the fold, and the header (with close button) stays reachable
-     via position:sticky while only the body scrolls. */
   .ui-modal-overlay { padding: 0; align-items: stretch; justify-content: stretch; }
   .ui-modal-box {
     border-radius: 0; margin: 0; max-height: none; height: 100%;
@@ -97,6 +95,24 @@
   }
   .ui-modal-head { position: sticky; top: 0; background: var(--card); z-index: 1; }
   .ui-modal-body { flex: 1; }
+
+  /* Small confirm / prompt dialogs stay a centered popup, even on mobile */
+  .ui-modal-overlay-popup {
+    padding: 20px 16px !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+.ui-modal-box-popup {
+  border-radius: 18px !important;
+  margin: 0 !important;
+  max-height: calc(100vh - 40px) !important;
+  height: auto !important;
+  max-width: 400px !important;
+  width: 100% !important;
+  overflow: hidden !important;
+}
+  .ui-modal-box-popup .ui-modal-head { position: static; }
+  .ui-modal-box-popup .ui-modal-body { flex: none; }
 }
 
 @media (max-width: 480px) {

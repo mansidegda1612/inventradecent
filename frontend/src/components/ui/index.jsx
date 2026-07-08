@@ -79,14 +79,14 @@ export function StatCard({ label, value, color, bg, icon, sub }) {
 }
 
 // ─── MODAL ───────────────────────────────────────────────────────────────────
-export function Modal({ open, onClose, title, children, width = 560 }) {
+export function Modal({ open, onClose, title, children, width = 560, popup = false }) {
   if (!open) return null;
   return (
     <div
-      className="ui-modal-overlay"
+      className={`ui-modal-overlay${popup ? " ui-modal-overlay-popup" : ""}`}
       style={window.innerHeight < 600 ? { alignItems: "flex-start" } : undefined}
     >
-      <div className="ui-modal-box" style={{ maxWidth: width }}>
+      <div className={`ui-modal-box${popup ? " ui-modal-box-popup" : ""}`} style={{ maxWidth: width }}>
         <div className="ui-modal-head">
           <span className="ui-modal-title">{title}</span>
           <button onClick={onClose} className="ui-modal-close">×</button>
@@ -211,17 +211,12 @@ export function ToastProvider({ open, msg, type }) {
 //  ─── confirmation Box message ──────────────────────────────
 export function ConfirmModal({ open, onClose, onConfirm, title = "Confirmtion", message = "Are you sure?" }) {
   return (
-    <Modal open={open} onClose={onClose} width={400} title={title}>
+    <Modal open={open} onClose={onClose} width={400} title={title} popup>
       <div>
         <p className="ui-confirm-msg">{message}</p>
-
         <div className="ui-confirm-actions">
-          <Btn variant="ghost" onClick={onClose}>
-            Cancel
-          </Btn>
-          <Btn danger onClick={onConfirm} autoFocus>
-            Confirm
-          </Btn>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn danger onClick={onConfirm} autoFocus>Confirm</Btn>
         </div>
       </div>
     </Modal>

@@ -151,7 +151,7 @@ function PhonePopup({ onSubmit, onCancel }) {
   };
 
   return (
-    <Modal open onClose={onCancel} title="Send via WhatsApp" width={360}>
+    <Modal open onClose={onCancel} title="Send via WhatsApp" width={360} popup={true}>
       <Field label="Customer's WhatsApp number" required>
         <input
           ref={inputRef}
