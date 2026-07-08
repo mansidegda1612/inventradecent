@@ -258,11 +258,11 @@ export default function CashBankVoucherEntry({ type = "CR" }) {
           columns={[
             {
               key: "payment_mode", label: "Mode",
-              render: (value) => <span style={{ fontWeight: 600, color: C.text }}>{value}</span>,
+              render: (value) => <span className="u-text u-bold">{value}</span>,
             },
             {
               key: "bill_no", label: "Voucher No",
-              render: (value) => <span style={{ fontWeight: 600, color: C.text }}>{value}</span>,
+              render: (value) => <span className="u-text u-bold">{value}</span>,
             },
             {
               key: "date", label: "Date",
@@ -272,7 +272,7 @@ export default function CashBankVoucherEntry({ type = "CR" }) {
             { key: "ref_no", label: "Ref No" },
             {
               key: "final_amount", label: "Amount",
-              render: (value) => <span style={{ fontWeight: 600, color: C.text }}>{fmt(value)}</span>,
+              render: (value) => <span className="u-text u-bold">{fmt(value)}</span>,
             },
           ]}
           data={list}
@@ -333,8 +333,7 @@ export default function CashBankVoucherEntry({ type = "CR" }) {
               </div>
               <input
                 type="number"
-                className="tr-barcode-input"
-                style={{ width: 220 }}
+                className="tr-barcode-input u-w220"
                 value={form.final_amount}
                 onChange={(e) => setForm({ ...form, final_amount: e.target.value })}
                 placeholder="0.00"

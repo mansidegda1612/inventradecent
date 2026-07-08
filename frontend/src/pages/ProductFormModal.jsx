@@ -256,7 +256,7 @@ const ProductFormModal = forwardRef(function ProductFormModal({ onSaved }, ref) 
           </Field>
         </div>
 
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <div className="u-modal-footer-actions">
           <Btn variant="ghost" onClick={() => setModal(false)}>
             Cancel
           </Btn>

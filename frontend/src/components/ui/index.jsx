@@ -1,32 +1,39 @@
-
 import { useEffect, useMemo, useRef, useState, useCallback , forwardRef ,useImperativeHandle } from "react";
 import { fmt, fmtDateShort, fmtDateISO } from "../../utils/format";
 import { C } from "../../utils/theme";
 import * as XLSX from 'xlsx';
 
+// ── theme tokens → CSS variables ───────────────────────────────────────────
+// Single source of truth stays utils/theme.js (C). We mirror it into CSS vars
+// once so new class-based styles can use var(--token) instead of inline
+// styles, with zero visual change. Same pattern as the shimmer style
+// injection already used by DataGrid below.
+if (typeof document !== "undefined" && !document.getElementById("ui-theme-vars")) {
+  const themeStyleEl = document.createElement("style");
+  themeStyleEl.id = "ui-theme-vars";
+  themeStyleEl.textContent = `:root{
+    --accent:${C.accent}; --accentBg:${C.accentBg ?? C.accent}; --card:${C.card}; --border:${C.border};
+    --borderLight:${C.borderLight ?? C.border}; --text:${C.text}; --muted:${C.muted}; --sub:${C.sub};
+    --hint:${C.hint}; --bg:${C.bg}; --surface:${C.surface ?? C.card};
+    --red:${C.red}; --redBg:${C.redBg}; --green:${C.green}; --greenBg:${C.greenBg};
+    --blue:${C.blue ?? C.accent}; --blueBg:${C.blueBg ?? C.accentBg ?? C.accent};
+    --amber:${C.amber ?? "#F59E0B"};
+    --sidebarBg:${C.sidebarBg ?? C.card}; --sidebarBorder:${C.sidebarBorder ?? C.border}; --sidebarText:${C.sidebarText ?? C.text};
+  }`;
+  document.head.appendChild(themeStyleEl);
+}
+
 // ─── BUTTON ──────────────────────────────────────────────────────────────────
-export function Btn({ children, onClick, variant = "primary", small, danger, style: s, disabled, autoFocus }) {
-  const base = {
-    display: "inline-flex", alignItems: "center", gap: 6,
-    padding: small ? "5px 13px" : "8px 18px",
-    borderRadius: 9, fontWeight: 600, fontSize: small ? 12 : 13,
-    transition: "all .15s", whiteSpace: "nowrap", border: "none",
-    opacity: disabled ? 0.5 : 1, pointerEvents: disabled ? "none" : "auto",
-  };
-  const styles = {
-    primary: { background: C.accent, color: "#fff", boxShadow: "0 1px 4px " + C.accent + "44" },
-    ghost: { background: "transparent", color: C.muted, border: `1.5px solid ${C.border}` },
-    danger: { background: C.redBg, color: C.red, border: `1.5px solid ${C.red}33` },
-    success: { background: C.greenBg, color: C.green, border: `1.5px solid ${C.green}44` },
-  };
+export function Btn({ children, onClick, variant = "primary", small, danger, style: s, disabled, autoFocus, className: extraCls }) {
   const v = danger ? "danger" : variant;
+  const cls = ["ui-btn", `ui-btn-${v}`, small ? "ui-btn-small" : "", disabled ? "ui-btn-disabled" : "", extraCls || ""]
+    .filter(Boolean).join(" ");
   return (
     <button
       autoFocus={autoFocus}
-      style={{ ...base, ...styles[v], ...s }}
+      className={cls}
+      style={s}
       onClick={onClick}
-      onMouseEnter={e => { e.currentTarget.style.filter = "brightness(.93)"; e.currentTarget.style.transform = "translateY(-1px)"; }}
-      onMouseLeave={e => { e.currentTarget.style.filter = "brightness(1)"; e.currentTarget.style.transform = "translateY(0)"; }}
     >
       {children}
     </button>
@@ -34,16 +41,16 @@ export function Btn({ children, onClick, variant = "primary", small, danger, sty
 }
 
 // ─── CARD ────────────────────────────────────────────────────────────────────
-export function Card({ children, style: s, title, action, noPad }) {
+export function Card({ children, style: s, title, action, noPad, className }) {
   return (
-    <div style={{ background: C.card, borderRadius: 14, border: `1px solid ${C.border}`, boxShadow: "0 1px 6px #00000008", overflow: "hidden", ...s }}>
+    <div className={`ui-card ${className || ""}`} style={s}>
       {title && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: `1px solid ${C.border}` }}>
-          <span style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{title}</span>
+        <div className="ui-card-head">
+          <span className="ui-card-title">{title}</span>
           {action}
         </div>
       )}
-      <div style={noPad ? {} : { padding: 20 }}>{children}</div>
+      <div className={noPad ? "ui-card-body-nopad" : "ui-card-body"}>{children}</div>
     </div>
   );
 }
@@ -51,11 +58,7 @@ export function Card({ children, style: s, title, action, noPad }) {
 // ─── BADGE ───────────────────────────────────────────────────────────────────
 export function Badge({ children, color = C.accent }) {
   return (
-    <span style={{
-      background: color + "18", color,
-      borderRadius: 6, padding: "2px 9px",
-      fontSize: 11, fontWeight: 600, letterSpacing: ".04em", whiteSpace: "nowrap",
-    }}>
+    <span className="ui-badge" style={{ background: color + "18", color }}>
       {children}
     </span>
   );
@@ -64,13 +67,13 @@ export function Badge({ children, color = C.accent }) {
 // ─── STAT CARD ───────────────────────────────────────────────────────────────
 export function StatCard({ label, value, color, bg, icon, sub }) {
   return (
-    <div style={{ background: C.card, borderRadius: 14, border: `1px solid ${C.border}`, padding: "18px 20px", boxShadow: "0 1px 6px #00000008" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <span style={{ fontSize: 10, color: C.hint, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>{label}</span>
-        <div style={{ width: 34, height: 34, borderRadius: 10, background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{icon}</div>
+    <div className="ui-statcard">
+      <div className="ui-statcard-top">
+        <span className="ui-statcard-label">{label}</span>
+        <div className="ui-statcard-icon" style={{ background: bg }}>{icon}</div>
       </div>
-      <div style={{ fontSize: 22, fontWeight: 800, color, letterSpacing: "-.02em", lineHeight: 1.1 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: C.hint, marginTop: 5 }}>{sub}</div>}
+      <div className="ui-statcard-value" style={{ color }}>{value}</div>
+      {sub && <div className="ui-statcard-sub">{sub}</div>}
     </div>
   );
 }
@@ -80,21 +83,15 @@ export function Modal({ open, onClose, title, children, width = 560 }) {
   if (!open) return null;
   return (
     <div
-      style={{
-        position: "fixed", inset: 0, background: "#00000050", zIndex: 1000,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "20px 12px", overflowY: "auto",
-        // Tall modals: fall back to top-align so they stay scrollable
-        ...(window.innerHeight < 600 && { alignItems: "flex-start" })
-      }}
-    //onClick={e => e.target === e.currentTarget && onClose()}
+      className="ui-modal-overlay"
+      style={window.innerHeight < 600 ? { alignItems: "flex-start" } : undefined}
     >
-      <div style={{ background: C.card, borderRadius: 18, border: `1px solid ${C.border}`, width: "100%", maxWidth: width, boxShadow: "0 20px 60px #00000025", marginTop: 20, marginBottom: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 22px", borderBottom: `1px solid ${C.border}` }}>
-          <span style={{ fontWeight: 800, fontSize: 16, color: C.text }}>{title}</span>
-          <button onClick={onClose} style={{ background: C.bg, border: "none", color: C.muted, fontSize: 18, lineHeight: 1, width: 30, height: 30, borderRadius: 8, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+      <div className="ui-modal-box" style={{ maxWidth: width }}>
+        <div className="ui-modal-head">
+          <span className="ui-modal-title">{title}</span>
+          <button onClick={onClose} className="ui-modal-close">×</button>
         </div>
-        <div style={{ padding: 22 }}>{children}</div>
+        <div className="ui-modal-body">{children}</div>
       </div>
     </div>
   );
@@ -103,9 +100,9 @@ export function Modal({ open, onClose, title, children, width = 560 }) {
 // ─── FIELD ───────────────────────────────────────────────────────────────────
 export function Field({ label, children, required }) {
   return (
-    <div style={{ marginBottom: 16 }}>
-      <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: C.sub, marginBottom: 6 }}>
-        {label}{required && <span style={{ color: C.red }}> *</span>}
+    <div className="ui-field">
+      <label className="ui-field-label">
+        {label}{required && <span className="ui-field-required"> *</span>}
       </label>
       {children}
     </div>
@@ -115,12 +112,12 @@ export function Field({ label, children, required }) {
 // ─── PAGE HEADER ─────────────────────────────────────────────────────────────
 export function PageHeader({ title, sub, action }) {
   return (
-    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 22, gap: 12, flexWrap: "wrap" }}>
+    <div className="ui-pageheader">
       <div>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: C.text, letterSpacing: "-.02em" }}>{title}</h1>
-        {sub && <p style={{ color: C.muted, marginTop: 3, fontSize: 13 }}>{sub}</p>}
+        <h1 className="ui-pageheader-title">{title}</h1>
+        {sub && <p className="ui-pageheader-sub">{sub}</p>}
       </div>
-      {action && <div style={{ flexShrink: 0 }}>{action}</div>}
+      {action && <div className="ui-pageheader-action">{action}</div>}
     </div>
   );
 }
@@ -136,14 +133,14 @@ export function DateFilter({ from, to, setFrom, setTo, totalLabel, totalValue })
           type="date"
           value={from}
           onChange={e => setFrom(e.target.value)}
-          style={{ borderRadius: 10 }}
+          className="ui-datefilter-input"
         />
         <span className="date-filter-sep">→</span>
         <input
           type="date"
           value={to}
           onChange={e => setTo(e.target.value)}
-          style={{ borderRadius: 10 }}
+          className="ui-datefilter-input"
         />
         <Btn
           small
@@ -205,25 +202,7 @@ export function WhatsAppIcon({ size = 18 }) {
 export function ToastProvider({ open, msg, type }) {
   if (!open) return null;
   return (
-    <div style={{
-      position: "fixed",
-      bottom: 20,
-      left: "50%",
-      transform: `translateX(-50%) ${open ? "translateY(0)" : "translateY(20px)"}`,
-      opacity: open ? 1 : 0,
-      transition: "all 0.9s ease",
-      zIndex: 2000,
-      padding: "10px 16px",
-      borderRadius: 10,
-      fontSize: 13,
-      fontWeight: 600,
-      color: type === "error" ? C.redBg : C.greenBg,
-      background: type === "error" ? C.red : C.green,
-      //border: `1px solid ${type === "error" ? C.red : C.green}`,
-      boxShadow: "0 4px 12px #00000020",
-      minWidth: 200,
-      textAlign: "center"
-    }}>
+    <div className={`ui-toast ${type === "error" ? "ui-toast-error" : "ui-toast-success"}`}>
       {msg}
     </div>
   );
@@ -234,9 +213,9 @@ export function ConfirmModal({ open, onClose, onConfirm, title = "Confirmtion", 
   return (
     <Modal open={open} onClose={onClose} width={400} title={title}>
       <div>
-        <p style={{ fontSize: 13, marginBottom: 20 }}>{message}</p>
+        <p className="ui-confirm-msg">{message}</p>
 
-        <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+        <div className="ui-confirm-actions">
           <Btn variant="ghost" onClick={onClose}>
             Cancel
           </Btn>
@@ -254,17 +233,9 @@ export function BalancePill({ value, labels = ["Rec", "Pay"] }) {
   const n = Number(value) || 0;
   const isPositive = n >= 0;
   return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      background: isPositive ? C.greenBg : C.redBg,
-      color: isPositive ? C.green : C.red,
-      border: `1px solid ${isPositive ? C.red : C.green}33`,
-      borderRadius: 6, padding: "2px 8px",
-      fontSize: 11.5, fontWeight: 700,
-      fontFamily: "'JetBrains Mono', monospace",
-    }}>
+    <span className={`ui-balancepill ${isPositive ? "ui-balancepill-pos" : "ui-balancepill-neg"}`}>
       {fmt(Math.abs(n))}
-      <span style={{ fontSize: 9, fontWeight: 800, opacity: 0.7 }}>
+      <span className="ui-balancepill-label">
         {isPositive ? labels[0] : labels[1]}
       </span>
     </span>
@@ -579,52 +550,12 @@ export function DataGrid({
       ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [focusedIdx]);
 
-  // ── styles ────────────────────────────────────────────────────────────────
-  const S = {
-    wrap: { background: C.card, borderRadius: 16, border: `1px solid ${C.border}`, boxShadow: "0 2px 12px #00000009", overflow: "visible" },
-    toolbar: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px", borderBottom: `1px solid ${C.border}`, gap: 10, flexWrap: "wrap", background: "#fafbfd" },
-    titleText: { fontSize: 14, fontWeight: 800, color: C.text, letterSpacing: "-.01em" },
-    toolbarRight: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
-    searchWrap: { position: "relative", display: "flex", alignItems: "center" },
-    searchIcon: { position: "absolute", left: 10, fontSize: 13, color: C.muted, pointerEvents: "none" },
-    searchInput: { height: 33, padding: "0 10px 0 30px", border: `1.5px solid ${C.border}`, borderRadius: 9, fontSize: 12.5, fontFamily: "inherit", background: C.card, color: C.text, outline: "none", width: 200, transition: "border .15s, box-shadow .15s" },
-    colBtn: { height: 33, padding: "0 12px", borderRadius: 9, border: `1.5px solid ${C.border}`, background: C.card, fontSize: 12, fontWeight: 600, color: C.sub, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", transition: "all .15s" },
-    colDropdown: { position: "absolute", right: 0, top: "calc(100% + 6px)", background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: "0 8px 30px #00000014", padding: 8, zIndex: 200, minWidth: 170 },
-    colItem: { display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, color: C.sub, transition: "background .1s", userSelect: "none" },
-    // ── date filter bar ──
-    dateBar: { display: "flex", alignItems: "center", gap: 6, padding: "7px 18px", flexWrap: "nowrap", overflowX: "auto", minHeight: 44, justifyContent: "flex-end" },
-    dateLabel: { fontSize: 11.5, fontWeight: 700, color: C.muted, letterSpacing: ".05em", whiteSpace: "nowrap", flexShrink: 0, marginRight: 2 },
-    dateInput: { height: 30, padding: "0 8px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 12.5, fontFamily: "inherit", background: C.card, color: C.text, outline: "none", cursor: "pointer", width: 132, flexShrink: 0 },
-    dateSep: { fontSize: 12, color: C.hint, flexShrink: 0, userSelect: "none" },
-    dateDivider: { width: 1, height: 18, background: C.border, flexShrink: 0, margin: "0 4px" },
-    dateQuickBtn: { height: 28, padding: "0 10px", borderRadius: 7, border: `1.5px solid ${C.border}`, background: "transparent", fontSize: 11.5, fontWeight: 600, color: C.sub, cursor: "pointer", fontFamily: "inherit", transition: "all .13s", whiteSpace: "nowrap", flexShrink: 0 },
-    // ── rest ──
-    selBar: { display: "flex", alignItems: "center", gap: 10, padding: "9px 18px", background: C.accent + "12", borderBottom: `1px solid ${C.accent}33`, fontSize: 12.5, fontWeight: 600, color: C.accent, flexWrap: "wrap" },
-    tableWrap: { overflowX: "auto" },
-    table: { width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 520 },
-    thead: { background: "#f7f8fb", borderBottom: `2px solid ${C.border}` },
-    th: sortable => ({ padding: "11px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".07em", whiteSpace: "nowrap", userSelect: "none", cursor: sortable ? "pointer" : "default" }),
-    thCheck: { padding: "11px 14px", width: 38, textAlign: "center" },
-    td: { padding: "11px 14px", color: C.text, fontSize: 13, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap", verticalAlign: "middle" },
-    tdCheck: { padding: "11px 14px", width: 38, textAlign: "center", borderBottom: `1px solid ${C.border}`, verticalAlign: "middle" },
-    emptyWrap: { textAlign: "center", padding: "50px 20px", color: C.hint, fontSize: 13 },
-    footer: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 18px", borderTop: `1px solid ${C.border}`, gap: 10, flexWrap: "wrap", background: "#fafbfd" },
-    footerLeft: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
-    footerRight: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
-    footerInfo: { fontSize: 12, color: C.muted, fontWeight: 500 },
-    pagination: { display: "flex", alignItems: "center", gap: 4 },
-    pageBtn: (active, disabled) => ({ minWidth: 30, height: 30, padding: "0 6px", borderRadius: 8, border: `1.5px solid ${active ? C.accent : C.border}`, background: active ? C.accent : C.card, fontSize: 12, fontWeight: 600, color: active ? "#fff" : C.sub, cursor: disabled ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all .13s", fontFamily: "inherit", opacity: disabled ? 0.38 : 1, boxShadow: active ? `0 2px 8px ${C.accent}44` : "none" }),
-    actionBtn: variant => ({ height: 30, padding: "0 12px", borderRadius: 8, border: variant === "danger" ? `1.5px solid ${C.red}33` : variant === "primary" ? `1.5px solid ${C.accent}` : `1.5px solid ${C.border}`, background: variant === "danger" ? C.redBg : variant === "primary" ? C.accent : C.card, fontSize: 12, fontWeight: 600, color: variant === "danger" ? C.red : variant === "primary" ? "#fff" : C.sub, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "inherit", transition: "filter .13s", whiteSpace: "nowrap" }),
-    excelBtn: { height: 33, padding: "0 12px", borderRadius: 9, border: `1.5px solid ${C.green}55`, background: C.greenBg, fontSize: 12, fontWeight: 700, color: C.green, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", transition: "all .15s", whiteSpace: "nowrap" },
-    footerActions: { display: "flex", alignItems: "center", gap: 7 },
-    skeleton: { background: "linear-gradient(90deg,#f0f0f0 25%,#e8e8e8 50%,#f0f0f0 75%)", backgroundSize: "200% 100%", animation: "dg-shimmer 1.3s infinite", borderRadius: 6, height: 13 },
-  };
-
-  const rowBg = (isSelected, isFocused) => {
-    if (isFocused && isSelected) return C.accent + "22";
-    if (isFocused) return C.accent + "14";
-    if (isSelected) return C.accent + "0e";
-    return "transparent";
+  // ── row state → class helper (was inline rowBg()) ─────────────────────────
+  const rowClass = (isSelected, isFocused) => {
+    let c = "dg-row";
+    if (isSelected) c += " dg-row-selected";
+    if (isFocused) c += " dg-row-focused";
+    return c;
   };
 
   // ── quick-date helpers ────────────────────────────────────────────────────
@@ -655,20 +586,18 @@ export function DataGrid({
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <div style={S.wrap} data-dg-root="1">
+    <div className="dg-wrap" data-dg-root="1">
 
       {/* ── TOOLBAR ── */}
-      <div style={S.toolbar}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", flex: 1 }}>
-          {title && <span style={S.titleText}>{title}</span>}
-          {headerExtra && <div style={{ display: "flex", alignItems: "center", gap: 10 }}>{headerExtra}</div>}
+      <div className="dg-toolbar">
+        <div className="dg-toolbar-left">
+          {title && <span className="dg-title">{title}</span>}
+          {headerExtra && <div className="dg-header-extra">{headerExtra}</div>}
           {HeaderButtons.length > 0 && (
-            <div style={S.footerActions}>
+            <div className="dg-actions">
               {HeaderButtons.map(btn => (
-                <button key={btn.key} style={S.actionBtn(btn.variant || "")}
+                <button key={btn.key} className={`dg-action-btn dg-action-btn-${btn.variant || "default"}`}
                   onClick={() => btn.onClick?.(Array.from(selected), data, focusedRow)}
-                  onMouseEnter={e => (e.currentTarget.style.filter = "brightness(.93)")}
-                  onMouseLeave={e => (e.currentTarget.style.filter = "brightness(1)")}
                   title={btn.hotkey ? `Shortcut: ${btn.hotkey}` : undefined}
                 >
                   {btn.icon && <span>{btn.icon}</span>}
@@ -681,96 +610,71 @@ export function DataGrid({
 
         {/* ── DATE FILTER BAR ── */}
         {dateFilter && (
-          <div style={S.dateBar}>
-
-
+          <div className="dg-datebar">
             {/* Quick selectors */}
             {[
               { label: "This Month", fn: setThisMonth },
               { label: "This Quarter", fn: setThisQuarter },
               { label: "This FY", fn: setThisFY },
             ].map(q => (
-              <button key={q.label} style={S.dateQuickBtn}
-                onClick={q.fn}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; e.currentTarget.style.background = C.accent + "0d"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.sub; e.currentTarget.style.background = "transparent"; }}
-              >{q.label}</button>
+              <button key={q.label} className="dg-date-quick-btn" onClick={q.fn}>{q.label}</button>
             ))}
             {/* Vertical divider */}
-            <span style={S.dateDivider} />
-
+            <span className="dg-date-divider" />
 
             {/* From date */}
             <input
               type="date" value={dateFrom}
-              style={S.dateInput}
+              className="dg-date-input"
               onChange={e => setDateFrom(e.target.value)}
-              onFocus={e => (e.target.style.borderColor = C.accent)}
-              onBlur={e => (e.target.style.borderColor = C.border)}
             />
 
             {/* Arrow separator */}
-            <span style={S.dateSep}>→</span>
+            <span className="dg-date-sep">→</span>
 
             {/* To date */}
             <input
               type="date" value={dateTo}
-              style={S.dateInput}
+              className="dg-date-input"
               onChange={e => setDateTo(e.target.value)}
-              onFocus={e => (e.target.style.borderColor = C.accent)}
-              onBlur={e => (e.target.style.borderColor = C.border)}
             />
-
-
-
           </div>
         )}
 
-
-        <div style={S.toolbarRight}>
+        <div className="dg-toolbar-right">
           {/* Search */}
-          <div style={S.searchWrap}>
-            <span style={S.searchIcon}>🔍</span>
+          <div className="dg-search-wrap">
+            <span className="dg-search-icon">🔍</span>
             <input
-              style={S.searchInput}
+              className="dg-search-input"
               placeholder="Search anything…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              onFocus={e => { e.target.style.borderColor = C.accent; e.target.style.boxShadow = `0 0 0 3px ${C.accent}18`; }}
-              onBlur={e => { e.target.style.borderColor = C.border; e.target.style.boxShadow = "none"; }}
             />
           </div>
 
           {/* Excel export */}
           <button
-            style={{ ...S.excelBtn, opacity: exportLoading ? 0.65 : 1 }}
+            className="dg-excel-btn"
             disabled={exportLoading}
             onClick={handleExport}
-            onMouseEnter={e => (e.currentTarget.style.filter = "brightness(.93)")}
-            onMouseLeave={e => (e.currentTarget.style.filter = "brightness(1)")}
             title="Export to Excel"
           >
             {exportLoading ? "⏳" : "⬇️"}
           </button>
 
-
           {/* Column visibility */}
-          <div style={{ position: "relative" }} ref={colDropRef}>
+          <div className="dg-coldrop-wrap" ref={colDropRef}>
             <button
-              style={S.colBtn}
+              className="dg-col-btn"
               onClick={() => setColDropOpen(o => !o)}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.sub; }}
             >⊞</button>
             {colDropOpen && (
-              <div style={S.colDropdown}>
+              <div className="dg-col-dropdown">
                 {gridCols.map(c => (
-                  <label key={c.key} style={S.colItem}
-                    onMouseEnter={e => (e.currentTarget.style.background = C.bg)}
-                    onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                  >
+                  <label key={c.key} className="dg-col-item">
                     <input type="checkbox" checked={visibleKeys.includes(c.key)} onChange={() => toggleCol(c.key)}
-                      style={{ accentColor: C.accent, width: 14, height: 14 }} />
+                      className="dg-col-checkbox" />
                     {c.label}
                   </label>
                 ))}
@@ -780,28 +684,26 @@ export function DataGrid({
         </div>
       </div>
 
-
-
       {/* ── SELECTION BANNER ── */}
       {selected.size > 0 && (
-        <div style={S.selBar}>
+        <div className="dg-selbar">
           ✓&nbsp;<strong>{selected.size}</strong>&nbsp;row{selected.size !== 1 ? "s" : ""} selected
           <button
-            style={{ ...S.actionBtn("danger"), height: 24, padding: "0 10px", fontSize: 11 }}
+            className="dg-action-btn dg-action-btn-danger dg-selbar-clear"
             onClick={() => setSelected(new Set())}
           >✕ Clear</button>
         </div>
       )}
 
-      {/* ── TABLE ── */}
-      <div style={S.tableWrap}>
-        <table style={S.table} ref={tableRef}>
+      {/* ── TABLE (desktop / tablet) ── */}
+      <div className="dg-table-wrap">
+        <table className="dg-table" ref={tableRef}>
           <thead>
-            <tr style={S.thead}>
+            <tr className="dg-thead">
               {selectable && (
-                <th style={S.thCheck}>
+                <th className="dg-th-check">
                   <input type="checkbox" checked={allPageSelected} onChange={toggleAll}
-                    style={{ accentColor: C.accent, width: 14, height: 14, cursor: "pointer" }} />
+                    className="dg-row-checkbox" />
                 </th>
               )}
               {visibleCols.map(c => {
@@ -810,14 +712,13 @@ export function DataGrid({
                 const icon = isActive ? (sortDir === "asc" ? " ▲" : " ▼") : " ↕";
                 return (
                   <th key={c.key}
-                    style={{ ...S.th(sortable), ...(c.width ? { width: c.width } : {}) }}
+                    className={`dg-th ${sortable ? "dg-th-sortable" : ""}`}
+                    style={c.width ? { width: c.width } : undefined}
                     onClick={() => sortable && handleSort(c.key)}
-                    onMouseEnter={e => sortable && (e.currentTarget.style.color = C.accent, e.currentTarget.style.background = C.accent + "10")}
-                    onMouseLeave={e => (e.currentTarget.style.color = C.muted, e.currentTarget.style.background = "transparent")}
                   >
                     {c.label}
                     {sortable && (
-                      <span style={{ fontSize: 10, marginLeft: 3, opacity: isActive ? 1 : 0.4, color: isActive ? C.accent : "inherit" }}>
+                      <span className={`dg-sort-icon ${isActive ? "dg-sort-icon-active" : ""}`}>
                         {icon}
                       </span>
                     )}
@@ -830,35 +731,33 @@ export function DataGrid({
             {isLoading
               ? Array.from({ length: pageSize }).map((_, i) => (
                 <tr key={i}>
-                  {selectable && <td style={S.tdCheck}><div style={{ ...S.skeleton, width: 14, height: 14, borderRadius: 3 }} /></td>}
+                  {selectable && <td className="dg-td-check"><div className="dg-skeleton" style={{ width: 14, height: 14, borderRadius: 3 }} /></td>}
                   {visibleCols.map(c => (
-                    <td key={c.key} style={S.td}><div style={{ ...S.skeleton, width: `${45 + (i * 7 + c.key.length * 5) % 40}%` }} /></td>
+                    <td key={c.key} className="dg-td"><div className="dg-skeleton" style={{ width: `${45 + (i * 7 + c.key.length * 5) % 40}%` }} /></td>
                   ))}
                 </tr>
               ))
               : pageRows.length === 0
                 ? <tr><td colSpan={visibleCols.length + (selectable ? 1 : 0)}>
-                  <div style={S.emptyWrap}><div style={{ fontSize: 32, marginBottom: 10, opacity: .45 }}>📭</div>{emptyText}</div>
+                  <div className="dg-empty"><div className="dg-empty-icon">📭</div>{emptyText}</div>
                 </td></tr>
                 : pageRows.map((row, ri) => {
                   const isSelected = selected.has(row.id);
                   const isFocused = focusedIdx === ri;
                   return (
                     <tr key={row.id ?? ri} data-idx={ri} tabIndex={-1}
-                      style={{ background: rowBg(isSelected, isFocused), transition: "background .1s", outline: isFocused ? `2px solid ${C.accent}` : "none", outlineOffset: "-2px", cursor: "pointer" }}
+                      className={rowClass(isSelected, isFocused)}
                       onClick={() => setFocusedIdx(ri)}
-                      onMouseEnter={e => { if (!isSelected && !isFocused) e.currentTarget.style.background = "#f7f8fd"; }}
-                      onMouseLeave={e => { if (!isSelected && !isFocused) e.currentTarget.style.background = "transparent"; }}
                     >
                       {selectable && (
-                        <td style={S.tdCheck}>
+                        <td className="dg-td-check">
                           <input type="checkbox" checked={isSelected} onChange={() => toggleRow(row.id)}
                             onClick={e => e.stopPropagation()}
-                            style={{ accentColor: C.accent, width: 14, height: 14, cursor: "pointer" }} />
+                            className="dg-row-checkbox" />
                         </td>
                       )}
                       {visibleCols.map(c => (
-                        <td key={c.key} style={S.td}>
+                        <td key={c.key} className="dg-td">
                           {c.render ? c.render(row[c.key], row) : (row[c.key] ?? "—")}
                         </td>
                       ))}
@@ -870,17 +769,83 @@ export function DataGrid({
         </table>
       </div>
 
+      {/* ── CARDS (mobile) ── same data/columns, stacked layout for small screens.
+          Rendered alongside the table; CSS toggles which one is visible per breakpoint,
+          so no extra JS state and all existing behavior (selection, focus, actions) is reused. ── */}
+      <div className="dg-cards">
+        {isLoading
+          ? Array.from({ length: Math.min(pageSize, 6) }).map((_, i) => (
+            <div className="dg-card" key={i}>
+              <div className="dg-skeleton" style={{ width: "60%", height: 14, marginBottom: 10 }} />
+              <div className="dg-skeleton" style={{ width: "90%" }} />
+              <div className="dg-skeleton" style={{ width: "75%", marginTop: 6 }} />
+            </div>
+          ))
+          : pageRows.length === 0
+            ? <div className="dg-empty"><div className="dg-empty-icon">📭</div>{emptyText}</div>
+            : pageRows.map((row, ri) => {
+              const isSelected = selected.has(row.id);
+              const isFocused = focusedIdx === ri;
+              // first visible column reads as the card's heading; rest render as label:value rows
+              const [headCol, ...restCols] = visibleCols;
+              return (
+                <div key={row.id ?? ri}
+                  className={`dg-card ${isSelected ? "dg-row-selected" : ""} ${isFocused ? "dg-row-focused" : ""}`}
+                  onClick={() => setFocusedIdx(ri)}
+                >
+                  <div className="dg-card-head">
+                    {selectable && (
+                      <input type="checkbox" checked={isSelected} onChange={() => toggleRow(row.id)}
+                        onClick={e => e.stopPropagation()}
+                        className="dg-row-checkbox" />
+                    )}
+                    {headCol && (
+                      <div className="dg-card-heading">
+                        {headCol.render ? headCol.render(row[headCol.key], row) : (row[headCol.key] ?? "—")}
+                      </div>
+                    )}
+                  </div>
+                  {restCols.map(c => (
+                    <div className="dg-card-row" key={c.key}>
+                      <span className="dg-card-label">{c.label}</span>
+                      <span className="dg-card-value">
+                        {c.render ? c.render(row[c.key], row) : (row[c.key] ?? "—")}
+                      </span>
+                    </div>
+                  ))}
+                  {footerButtons.length > 0 && (
+                    <div className="dg-card-actions">
+                      {footerButtons.map(btn => (
+                        <button key={btn.key}
+                          className={`dg-action-btn dg-action-btn-${btn.variant || "default"}`}
+                          title={btn.label}
+                          onClick={e => {
+                            e.stopPropagation();
+                            setFocusedIdx(ri);
+                            btn.onClick?.(Array.from(selected), data, row);
+                          }}
+                        >
+                          {btn.icon && <span className="dg-action-btn-icon">{btn.icon}</span>}
+                          <span className="dg-action-btn-label">{btn.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+        }
+      </div>
+
       {/* ── FOOTER ── */}
-      <div style={S.footer}>
-        <div style={S.footerLeft}>
-          {footerExtra && <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{footerExtra}</div>}
+      <div className="dg-footer">
+        <div className="dg-footer-left">
+          {footerExtra && <div className="dg-footer-extra">{footerExtra}</div>}
           {footerButtons.length > 0 && (
-            <div style={S.footerActions}>
+            <div className="dg-actions dg-footer-actions">
               {footerButtons.map(btn => (
-                <button key={btn.key} style={S.actionBtn(btn.variant || "")}
+                <button key={btn.key} className={`dg-action-btn dg-action-btn-${btn.variant || "default"}`}
                   onClick={() => btn.onClick?.(Array.from(selected), data, focusedRow)}
-                  onMouseEnter={e => (e.currentTarget.style.filter = "brightness(.93)")}
-                  onMouseLeave={e => (e.currentTarget.style.filter = "brightness(1)")}
                   title={btn.hotkey ? `Shortcut: ${btn.hotkey}` : undefined}
                 >
                   {btn.icon && <span>{btn.icon}</span>}
@@ -890,25 +855,24 @@ export function DataGrid({
             </div>
           )}
         </div>
-        <div style={S.footerRight}>
-          <span style={S.footerInfo}>
+        <div className="dg-footer-right">
+          <span className="dg-footer-info">
             {total === 0
               ? "No records"
-              : <>{from}–{to} of <strong style={{ color: C.sub }}>{total}</strong> records</>}
+              : <>{from}–{to} of <strong className="dg-footer-info-strong">{total}</strong> records</>}
           </span>
-          <div style={S.pagination}>
-            <button style={S.pageBtn(false, safePage === 1)} disabled={safePage === 1} onClick={() => setPage(p => p - 1)}>‹</button>
+          <div className="dg-pagination">
+            <button className="dg-page-btn" disabled={safePage === 1} onClick={() => setPage(p => p - 1)}>‹</button>
             {pageNums.map((p, i) =>
               p === "…"
-                ? <span key={`e${i}`} style={{ padding: "0 4px", color: C.hint }}>…</span>
+                ? <span key={`e${i}`} className="dg-page-ellipsis">…</span>
                 : (
-                  <button key={p} style={S.pageBtn(p === safePage, false)} onClick={() => setPage(p)}
-                    onMouseEnter={e => p !== safePage && (e.currentTarget.style.borderColor = C.accent, e.currentTarget.style.color = C.accent, e.currentTarget.style.background = C.accent + "12")}
-                    onMouseLeave={e => p !== safePage && (e.currentTarget.style.borderColor = C.border, e.currentTarget.style.color = C.sub, e.currentTarget.style.background = C.card)}
-                  >{p}</button>
+                  <button key={p} className={`dg-page-btn ${p === safePage ? "dg-page-btn-active" : ""}`} onClick={() => setPage(p)}>
+                    {p}
+                  </button>
                 )
             )}
-            <button style={S.pageBtn(false, safePage === totalPages)} disabled={safePage === totalPages} onClick={() => setPage(p => p + 1)}>›</button>
+            <button className="dg-page-btn" disabled={safePage === totalPages} onClick={() => setPage(p => p + 1)}>›</button>
           </div>
         </div>
       </div>
@@ -1142,128 +1106,66 @@ export const Dropdown = forwardRef(function Dropdown({
       setSearch("");
     }
   }
-  const S = {
-    wrap: { position: "relative", width },
-    lbl: { display: "block", fontSize: 12, fontWeight: 600, color: C.sub, marginBottom: 6 },
-    trigger: {
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      height: 35, padding: "0 12px",
-      border: `1.5px solid ${open ? C.accent : C.border}`,
-      borderRadius: 7, background: disabled ? C.bg : C.card,
-      cursor: disabled ? "not-allowed" : "pointer", fontSize: 13,
-      color: selected ? C.text : C.hint, fontFamily: "inherit",
-      boxShadow: open ? `0 0 0 3px ${C.accent}18` : "none",
-      transition: "border .15s, box-shadow .15s",
-      userSelect: "none", gap: 8,
-      opacity: disabled ? 0.6 : 1,
-    },
-    dropdown: {
-      position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0,
-      background: C.card, border: `1px solid ${C.border}`,
-      borderRadius: 12, boxShadow: "0 8px 30px #00000018",
-      zIndex: 500, overflow: "hidden",
-      animation: "xc-fadeIn .13s ease",
-    },
-    searchWrap: {
-      padding: "10px 10px 8px", borderBottom: `1px solid ${C.border}`,
-      position: "relative", display: "flex", alignItems: "center",
-    },
-    searchIcon: { position: "absolute", left: 20, fontSize: 12, color: C.hint, pointerEvents: "none" },
-    searchInput: {
-      width: "100%", height: 30, padding: "0 8px 0 26px",
-      border: `1.5px solid ${C.border}`, borderRadius: 8,
-      fontSize: 12.5, fontFamily: "inherit",
-      background: C.bg, color: C.text, outline: "none",
-      transition: "border .15s",
-    },
-    list: { maxHeight: 170, overflowY: "auto", padding: "6px" },
-    item: (isFoc, isSel, isDis) => ({
-      display: "flex", alignItems: "center", gap: 10,
-      padding: "8px 10px", borderRadius: 8, cursor: isDis ? "not-allowed" : "pointer",
-      background: isFoc ? C.accent + "14" : isSel ? C.accent + "0d" : "transparent",
-      opacity: isDis ? 0.45 : 1,
-      transition: "background .1s",
-    }),
-    itemLabel: isSel => ({ fontSize: 13, color: C.text, fontWeight: isSel ? 600 : 400 }),
-    itemSub: { fontSize: 11, color: C.hint, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-    noMatch: { padding: "20px 10px", textAlign: "center", fontSize: 12, color: C.hint },
-    footer: { borderTop: `1px solid ${C.border}`, padding: "8px 10px", display: "flex", gap: 6, flexWrap: "wrap" },
-    footBtn: {
-      flex: 1, height: 28, borderRadius: 8,
-      border: `1.5px solid ${C.border}`, background: C.bg,
-      fontSize: 11.5, fontWeight: 600, color: C.sub,
-      cursor: "pointer", fontFamily: "inherit",
-      display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-      transition: "all .13s",
-    },
-    caret: { fontSize: 10, color: C.hint, transition: "transform .15s", transform: open ? "rotate(180deg)" : "rotate(0deg)", flexShrink: 0 },
-    clearBtn: { background: "none", border: "none", cursor: "pointer", color: C.hint, fontSize: 14, lineHeight: 1, padding: 0, display: "flex", alignItems: "center" },
-  };
-
   return (
-    <div style={S.wrap} ref={wrapRef} onKeyDown={handleKeyDown}>
-      {/* {label && <label style={S.lbl}>{label}</label>} */}
-
-      <div style={S.trigger} tabIndex={disabled ? -1 : 0}
+    <div className="dd-wrap" style={{ width }} ref={wrapRef} onKeyDown={handleKeyDown}>
+      <div
+        className={`dd-trigger ${open ? "dd-trigger-open" : ""} ${disabled ? "dd-trigger-disabled" : ""} ${selected ? "dd-trigger-hasvalue" : ""}`}
+        tabIndex={disabled ? -1 : 0}
         onClick={() => !disabled} role="combobox" aria-expanded={open}
         onFocus={() => {
           if (isShiftTab) { SetIsShiftTab(false); return; }
           !disabled && setOpen(true);
         }}>
 
-        <span style={{ display: "flex", alignItems: "center", gap: 7, flex: 1, minWidth: 0, overflow: "hidden" }}>
-          {selected?.icon && <span style={{ fontSize: 14 }}>{selected.icon}</span>}
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span className="dd-trigger-value">
+          {selected?.icon && <span className="dd-trigger-value-icon">{selected.icon}</span>}
+          <span className="dd-trigger-value-text">
             {selected ? selected[displayField] : placeholder}
           </span>
         </span>
-        <span style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+        <span className="dd-trigger-right">
           {clearable && selected && (
-            <button style={S.clearBtn} onClick={e => { e.stopPropagation(); onChange?.(null, null); }}>✕</button>
+            <button className="dd-clear-btn" onClick={e => { e.stopPropagation(); onChange?.(null, null); }}>✕</button>
           )}
-          <span style={S.caret}>▾</span>
+          <span className={`dd-caret ${open ? "dd-caret-open" : ""}`}>▾</span>
         </span>
       </div>
 
       {open && (
-        <div style={S.dropdown}>
+        <div className="dd-dropdown">
           {/* Search */}
-          {allowSearch && (<div style={S.searchWrap}>
-            <span style={S.searchIcon}>🔍</span>
+          {allowSearch && (<div className="dd-search-wrap">
+            <span className="dd-search-icon">🔍</span>
             <input
               tabIndex={-1}
               ref={searchRef}
-              style={S.searchInput}
+              className="dd-search-input"
               placeholder="Search…"
               value={search}
               onChange={e => { setSearch(e.target.value); setFocIdx(0); }}
-              // onKeyDown={handleKeyDown}
-              onFocus={e => { e.target.style.borderColor = C.accent; }}
-              onBlur={e => { e.target.style.borderColor = C.border; }}
             />
           </div>)}
 
           {/* List */}
-          <div style={S.list} ref={listRef}>
+          <div className="dd-list" ref={listRef}>
             {filtered.length === 0
-              ? <div style={S.noMatch}>📭 No matches</div>
+              ? <div className="dd-nomatch">📭 No matches</div>
               : filtered.map((opt, i) => {
                 const isFoc = i === focIdx;
                 const isSel = opt[keyField] == value;
                 return (
                   <div
                     key={opt[keyField]}
-                    // onKeyDown={handleKeyDown}
                     data-xc-item
-                    style={S.item(isFoc, isSel, opt.disabled)}
+                    className={`dd-item ${isFoc ? "dd-item-focused" : ""} ${isSel ? "dd-item-selected" : ""} ${opt.disabled ? "dd-item-disabled" : ""}`}
                     onClick={() => handleItemClick(opt, i)}
                   >
-                    {opt.icon && <span style={{ fontSize: 14, flexShrink: 0, width: 20, textAlign: "center" }}>{opt.icon}</span>}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={S.itemLabel(isSel)}>{opt[displayField]}</div>
-                      {opt.sub && <div style={S.itemSub}>{opt.sub}</div>}
+                    {opt.icon && <span className="dd-item-icon">{opt.icon}</span>}
+                    <div className="dd-item-body">
+                      <div className={`dd-item-label ${isSel ? "dd-item-label-selected" : ""}`}>{opt[displayField]}</div>
+                      {opt.sub && <div className="dd-item-sub">{opt.sub}</div>}
                     </div>
-                    {isSel && <span style={{ fontSize: 14, color: C.accent, flexShrink: 0 }}>✓</span>}
+                    {isSel && <span className="dd-item-check">✓</span>}
                   </div>
                 );
               })
@@ -1272,15 +1174,13 @@ export const Dropdown = forwardRef(function Dropdown({
 
           {/* Footer buttons */}
           {footerButtons.length > 0 && (
-            <div style={S.footer}>
+            <div className="dd-footer">
               {footerButtons.map((btn, i) => (
                 <button
                   key={i}
                   tabIndex={-1}
-                  style={S.footBtn}
+                  className="dd-footbtn"
                   onClick={() => fireBtnAction(btn)}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.sub; }}
                 >
                   {btn.icon && <span>{btn.icon}</span>}
                   {btn.label}
@@ -1379,70 +1279,34 @@ export function MultiDropdown({
   const visibleChips = selectedOpts.slice(0, maxVisible);
   const extra = selectedOpts.length - maxVisible;
 
-  const S = {
-    wrap: { position: "relative", width },
-    lbl: { display: "block", fontSize: 12, fontWeight: 600, color: C.sub, marginBottom: 6 },
-    trigger: {
-      display: "flex", alignItems: "center", flexWrap: "wrap",
-      minHeight: 38, padding: "4px 10px",
-      border: `1.5px solid ${open ? C.accent : C.border}`,
-      borderRadius: 10, background: disabled ? C.bg : C.card,
-      cursor: disabled ? "not-allowed" : "pointer",
-      boxShadow: open ? `0 0 0 3px ${C.accent}18` : "none",
-      gap: 5, opacity: disabled ? 0.6 : 1,
-      transition: "border .15s, box-shadow .15s",
-    },
-    chip: {
-      display: "inline-flex", alignItems: "center", gap: 4,
-      background: C.accent + "18", color: C.accent,
-      borderRadius: 6, padding: "2px 7px 2px 8px",
-      fontSize: 11.5, fontWeight: 600,
-    },
-    chipRemove: { background: "none", border: "none", cursor: "pointer", color: C.accent, fontSize: 12, padding: 0, lineHeight: 1, display: "flex", alignItems: "center" },
-    extra: { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "2px 7px", fontSize: 11, fontWeight: 600, color: C.hint },
-    caret: { marginLeft: "auto", fontSize: 10, color: C.hint, transition: "transform .15s", transform: open ? "rotate(180deg)" : "rotate(0deg)", flexShrink: 0 },
-    dropdown: { position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: "0 8px 30px #00000018", zIndex: 500, overflow: "hidden", animation: "xc-fadeIn .13s ease" },
-    searchWrap: { padding: "10px 10px 8px", borderBottom: `1px solid ${C.border}`, position: "relative", display: "flex", alignItems: "center" },
-    searchIcon: { position: "absolute", left: 20, fontSize: 12, color: C.hint, pointerEvents: "none" },
-    searchInput: { width: "100%", height: 30, padding: "0 8px 0 26px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 12.5, fontFamily: "inherit", background: C.bg, color: C.text, outline: "none" },
-    list: { maxHeight: 224, overflowY: "auto", padding: "6px" },
-    item: (isFoc, isDis) => ({ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, cursor: isDis ? "not-allowed" : "pointer", background: isFoc ? C.accent + "14" : "transparent", opacity: isDis ? 0.45 : 1, transition: "background .1s" }),
-    check: { width: 16, height: 16, borderRadius: 4, border: `2px solid ${C.border}`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", transition: "all .1s" },
-    checkOn: { width: 16, height: 16, borderRadius: 4, border: `2px solid ${C.accent}`, background: C.accent, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" },
-    footer: { borderTop: `1px solid ${C.border}`, padding: "8px 10px", display: "flex", gap: 6, flexWrap: "wrap" },
-    footBtn: { flex: 1, height: 28, borderRadius: 8, border: `1.5px solid ${C.border}`, background: C.bg, fontSize: 11.5, fontWeight: 600, color: C.sub, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, transition: "all .13s" },
-    clearAllBtn: { height: 28, padding: "0 10px", borderRadius: 8, border: `1.5px solid ${C.red}33`, background: C.redBg, fontSize: 11, fontWeight: 600, color: C.red, cursor: "pointer", fontFamily: "inherit" },
-    doneBtn: { height: 28, padding: "0 12px", borderRadius: 8, border: `1.5px solid ${C.accent}44`, background: C.accent + "0d", fontSize: 11.5, fontWeight: 600, color: C.accent, cursor: "pointer", fontFamily: "inherit" },
-  };
-
   return (
-    <div style={S.wrap} ref={wrapRef} onKeyDown={handleKeyDown} tabIndex={disabled ? -1 : 0}>
-      {label && <label style={S.lbl}>{label}</label>}
+    <div className="dd-wrap" style={{ width }} ref={wrapRef} onKeyDown={handleKeyDown} tabIndex={disabled ? -1 : 0}>
+      {label && <label className="dd-label">{label}</label>}
 
-      <div style={S.trigger} onClick={() => !disabled && setOpen(o => !o)}>
+      <div className={`dd-multi-trigger ${open ? "dd-trigger-open" : ""} ${disabled ? "dd-trigger-disabled" : ""}`} onClick={() => !disabled && setOpen(o => !o)}>
         {selectedOpts.length === 0
-          ? <span style={{ fontSize: 13, color: C.hint, flex: 1 }}>{placeholder}</span>
+          ? <span className="dd-multi-placeholder">{placeholder}</span>
           : <>
             {visibleChips.map(o => (
-              <span key={o.value} style={S.chip}>
+              <span key={o.value} className="dd-chip">
                 {o.icon && <span>{o.icon}</span>}
                 {o.label}
-                <button style={S.chipRemove} onClick={e => { e.stopPropagation(); toggle(o); }}>✕</button>
+                <button className="dd-chip-remove" onClick={e => { e.stopPropagation(); toggle(o); }}>✕</button>
               </span>
             ))}
-            {extra > 0 && <span style={S.extra}>+{extra} more</span>}
+            {extra > 0 && <span className="dd-chip-extra">+{extra} more</span>}
           </>
         }
-        <span style={S.caret}>▾</span>
+        <span className={`dd-caret dd-caret-multi ${open ? "dd-caret-open" : ""}`}>▾</span>
       </div>
 
       {open && (
-        <div style={S.dropdown}>
-          <div style={S.searchWrap}>
-            <span style={S.searchIcon}>🔍</span>
+        <div className="dd-dropdown">
+          <div className="dd-search-wrap">
+            <span className="dd-search-icon">🔍</span>
             <input
               ref={searchRef}
-              style={S.searchInput}
+              className="dd-search-input"
               placeholder="Search…"
               value={search}
               onChange={e => { setSearch(e.target.value); setFocIdx(0); }}
@@ -1450,21 +1314,24 @@ export function MultiDropdown({
             />
           </div>
 
-          <div style={S.list} ref={listRef}>
+          <div className="dd-list dd-list-tall" ref={listRef}>
             {filtered.length === 0
-              ? <div style={{ padding: "18px 10px", textAlign: "center", fontSize: 12, color: C.hint }}>📭 No matches</div>
+              ? <div className="dd-nomatch">📭 No matches</div>
               : filtered.map((opt, i) => {
                 const isSel = value.includes(opt.value);
                 const isFoc = i === focIdx;
                 return (
-                  <div key={opt.value} data-xc-item style={S.item(isFoc, opt.disabled)} onClick={() => toggle(opt)} onMouseEnter={() => setFocIdx(i)}>
-                    <div style={isSel ? S.checkOn : S.check}>
-                      {isSel && <span style={{ fontSize: 10, color: "#fff", fontWeight: 800 }}>✓</span>}
+                  <div key={opt.value} data-xc-item
+                    className={`dd-item ${isFoc ? "dd-item-focused" : ""} ${opt.disabled ? "dd-item-disabled" : ""}`}
+                    onClick={() => toggle(opt)} onMouseEnter={() => setFocIdx(i)}
+                  >
+                    <div className={`dd-check ${isSel ? "dd-check-on" : ""}`}>
+                      {isSel && <span className="dd-check-tick">✓</span>}
                     </div>
-                    {opt.icon && <span style={{ fontSize: 14 }}>{opt.icon}</span>}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, color: C.text, fontWeight: isSel ? 600 : 400 }}>{opt.label}</div>
-                      {opt.sub && <div style={{ fontSize: 11, color: C.hint, marginTop: 1 }}>{opt.sub}</div>}
+                    {opt.icon && <span className="dd-item-icon">{opt.icon}</span>}
+                    <div className="dd-item-body">
+                      <div className={`dd-item-label ${isSel ? "dd-item-label-selected" : ""}`}>{opt.label}</div>
+                      {opt.sub && <div className="dd-item-sub">{opt.sub}</div>}
                     </div>
                   </div>
                 );
@@ -1472,21 +1339,19 @@ export function MultiDropdown({
             }
           </div>
 
-          <div style={S.footer}>
+          <div className="dd-footer">
             {selectedOpts.length > 0 && (
-              <button style={S.clearAllBtn} onClick={() => onChange?.([], [])}>✕ Clear all</button>
+              <button className="dd-clearall-btn" onClick={() => onChange?.([], [])}>✕ Clear all</button>
             )}
             {footerButtons.map((btn, i) => (
-              <button key={i} style={S.footBtn}
+              <button key={i} className="dd-footbtn"
                 onClick={() => { btn.onClick?.(); setOpen(false); }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.sub; }}
               >
                 {btn.icon && <span>{btn.icon}</span>}
                 {btn.label}
               </button>
             ))}
-            <button style={S.doneBtn} onClick={() => setOpen(false)}>✓ Done</button>
+            <button className="dd-done-btn" onClick={() => setOpen(false)}>✓ Done</button>
           </div>
         </div>
       )}
@@ -1507,49 +1372,19 @@ export function MultiDropdown({
 // ─────────────────────────────────────────────────────────────────────────────
 export function Tabs({ tabs = [], active, onChange, variant = "underline" }) {
   return (
-    <div style={{
-      display: "flex", gap: variant === "pill" ? 4 : 0,
-      borderBottom: variant === "underline" ? `2px solid ${C.border}` : "none",
-      background: variant === "pill" ? C.bg : "transparent",
-      borderRadius: variant === "pill" ? 10 : 0,
-      padding: variant === "pill" ? 4 : 0,
-      flexWrap: "wrap",
-    }}>
+    <div className={`ui-tabs ui-tabs-${variant}`}>
       {tabs.map(tab => {
         const isActive = tab.key === active;
         return (
           <button
             key={tab.key}
             onClick={() => onChange?.(tab.key)}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              padding: variant === "pill" ? "6px 14px" : "10px 16px",
-              fontSize: 13, fontWeight: isActive ? 700 : 500,
-              cursor: "pointer", border: "none", fontFamily: "inherit",
-              color: isActive ? C.accent : C.muted,
-              background: variant === "pill"
-                ? isActive ? C.card : "transparent"
-                : "transparent",
-              borderRadius: variant === "pill" ? 8 : 0,
-              borderBottom: variant === "underline"
-                ? `2px solid ${isActive ? C.accent : "transparent"}`
-                : "none",
-              marginBottom: variant === "underline" ? -2 : 0,
-              boxShadow: variant === "pill" && isActive ? "0 1px 4px #00000010" : "none",
-              transition: "all .15s", whiteSpace: "nowrap",
-            }}
-            onMouseEnter={e => { if (!isActive) e.currentTarget.style.color = C.accent; }}
-            onMouseLeave={e => { if (!isActive) e.currentTarget.style.color = C.muted; }}
+            className={`ui-tab ui-tab-${variant} ${isActive ? "ui-tab-active" : ""}`}
           >
-            {tab.icon && <span style={{ fontSize: 14 }}>{tab.icon}</span>}
+            {tab.icon && <span className="ui-tab-icon">{tab.icon}</span>}
             {tab.label}
             {tab.badge != null && (
-              <span style={{
-                background: isActive ? C.accent : C.border,
-                color: isActive ? "#fff" : C.sub,
-                borderRadius: 20, padding: "1px 7px",
-                fontSize: 10, fontWeight: 700, minWidth: 18, textAlign: "center",
-              }}>{tab.badge}</span>
+              <span className={`ui-tab-badge ${isActive ? "ui-tab-badge-active" : ""}`}>{tab.badge}</span>
             )}
           </button>
         );
@@ -1570,22 +1405,21 @@ export function Tabs({ tabs = [], active, onChange, variant = "underline" }) {
 // ─────────────────────────────────────────────────────────────────────────────
 export function Stepper({ steps = [], active, done = [] }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", overflowX: "auto" }}>
+    <div className="ui-stepper">
       {steps.map((step, i) => {
         const isDone = done.includes(step.key);
         const isActive = step.key === active;
-        const color = isDone ? C.green : isActive ? C.accent : C.hint;
-        const bg = isDone ? C.greenBg : isActive ? C.accent + "18" : C.bg;
+        const state = isDone ? "done" : isActive ? "active" : "pending";
         return (
-          <div key={step.key} style={{ display: "flex", alignItems: "center", flex: i < steps.length - 1 ? 1 : 0, minWidth: 0 }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flexShrink: 0 }}>
-              <div style={{ width: 34, height: 34, borderRadius: "50%", background: bg, border: `2px solid ${color}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isDone ? 14 : 13, fontWeight: 700, color, transition: "all .2s" }}>
+          <div key={step.key} className="ui-step" style={{ flex: i < steps.length - 1 ? 1 : 0 }}>
+            <div className="ui-step-col">
+              <div className={`ui-step-circle ui-step-circle-${state}`}>
                 {isDone ? "✓" : step.icon ?? (i + 1)}
               </div>
-              <span style={{ fontSize: 11, fontWeight: isActive ? 700 : 500, color: isActive ? C.text : C.muted, whiteSpace: "nowrap", textAlign: "center" }}>{step.label}</span>
+              <span className={`ui-step-label ${isActive ? "ui-step-label-active" : ""}`}>{step.label}</span>
             </div>
             {i < steps.length - 1 && (
-              <div style={{ flex: 1, height: 2, marginBottom: 20, background: isDone ? C.green : C.border, minWidth: 16, transition: "background .2s" }} />
+              <div className={`ui-step-line ui-step-line-${isDone ? "done" : "pending"}`} />
             )}
           </div>
         );
@@ -1607,11 +1441,11 @@ export function Stepper({ steps = [], active, done = [] }) {
 // ─────────────────────────────────────────────────────────────────────────────
 export function EmptyState({ icon = "📭", title = "Nothing here", sub, action }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "52px 24px", textAlign: "center", background: C.card, borderRadius: 14, border: `1px dashed ${C.border}` }}>
-      <div style={{ fontSize: 42, marginBottom: 14, opacity: 0.5, lineHeight: 1 }}>{icon}</div>
-      <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6 }}>{title}</div>
-      {sub && <div style={{ fontSize: 13, color: C.muted, maxWidth: 320, lineHeight: 1.5 }}>{sub}</div>}
-      {action && <div style={{ marginTop: 18 }}>{action}</div>}
+    <div className="ui-emptystate">
+      <div className="ui-emptystate-icon">{icon}</div>
+      <div className="ui-emptystate-title">{title}</div>
+      {sub && <div className="ui-emptystate-sub">{sub}</div>}
+      {action && <div className="ui-emptystate-action">{action}</div>}
     </div>
   );
 }
@@ -1630,13 +1464,16 @@ export function EmptyState({ icon = "📭", title = "Nothing here", sub, action 
 export function Spinner({ size = 22, color, overlay = false, label }) {
   const c = color ?? C.accent;
   const spinner = (
-    <div style={{ width: size, height: size, borderRadius: "50%", border: `${Math.max(2, size / 10)}px solid ${c}22`, borderTopColor: c, animation: "xc-spin .7s linear infinite", flexShrink: 0 }} />
+    <div
+      className="ui-spinner"
+      style={{ width: size, height: size, borderWidth: Math.max(2, size / 10), borderColor: c + "22", borderTopColor: c }}
+    />
   );
   if (!overlay) return spinner;
   return (
-    <div style={{ position: "absolute", inset: 0, background: C.card + "cc", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, zIndex: 100, borderRadius: "inherit" }}>
+    <div className="ui-spinner-overlay" style={{ background: C.card + "cc" }}>
       {spinner}
-      {label && <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>{label}</span>}
+      {label && <span className="ui-spinner-label">{label}</span>}
     </div>
   );
 }
@@ -1652,11 +1489,11 @@ export function Spinner({ size = 22, color, overlay = false, label }) {
 // ─────────────────────────────────────────────────────────────────────────────
 export function SectionDivider({ label, action }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "6px 0" }}>
-      <div style={{ flex: 1, height: 1, background: C.border }} />
-      {label && <span style={{ fontSize: 11, fontWeight: 700, color: C.hint, textTransform: "uppercase", letterSpacing: ".08em", whiteSpace: "nowrap" }}>{label}</span>}
+    <div className="ui-sectiondivider">
+      <div className="ui-sectiondivider-line" />
+      {label && <span className="ui-sectiondivider-label">{label}</span>}
       {action}
-      <div style={{ flex: 1, height: 1, background: C.border }} />
+      <div className="ui-sectiondivider-line" />
     </div>
   );
 }
@@ -1672,16 +1509,16 @@ export function SectionDivider({ label, action }) {
 // ─────────────────────────────────────────────────────────────────────────────
 export function KVTable({ rows = [], cols = 1 }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: "2px 16px" }}>
+    <div className="ui-kvtable" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
       {rows.map((r, i) => (
-        <div key={i} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: "9px 0", borderBottom: `1px solid ${C.border}` }}>
-          <span style={{ fontSize: 12, color: C.muted, fontWeight: 500, display: "flex", alignItems: "center", gap: 5 }}>
-            {r.icon && <span style={{ fontSize: 13 }}>{r.icon}</span>}
+        <div key={i} className="ui-kvtable-row">
+          <span className="ui-kvtable-label">
+            {r.icon && <span className="ui-kvtable-label-icon">{r.icon}</span>}
             {r.label}
           </span>
-          <span style={{ fontSize: 13, fontWeight: 600, color: r.color ?? C.text, textAlign: "right", marginLeft: 12 }}>
+          <span className="ui-kvtable-value" style={r.color ? { color: r.color } : undefined}>
             {r.badge
-              ? <span style={{ background: (r.color ?? C.accent) + "18", color: r.color ?? C.accent, borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 600 }}>{r.value}</span>
+              ? <span className="ui-kvtable-badge" style={{ background: (r.color ?? C.accent) + "18", color: r.color ?? C.accent }}>{r.value}</span>
               : r.value
             }
           </span>

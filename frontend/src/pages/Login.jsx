@@ -24,26 +24,20 @@ export default function Login({ onLogin }) {
   };
 
   return (
-    <div style={{
-      minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
-      background: "linear-gradient(135deg, #EEECFF 0%, #F4F6FA 60%, #EDF2FF 100%)",
-    }}>
-      <div style={{ width: 420 }}>
+    <div className="login-page">
+      <div className="login-box">
         {/* Brand */}
-        <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ fontSize: 38, fontWeight: 900, color: "#111827", letterSpacing: "-.03em" }}>
-            <span style={{ color: C.accent }}>Inventra</span>Decent
+        <div className="login-brand-wrap">
+          <div className="login-brand">
+            <span className="login-brand-highlight">Inventra</span>Decent
           </div>
-          <p style={{ color: C.muted, marginTop: 8, fontSize: 14 }}>
+          <p className="login-subtitle">
             Accounting & Inventory Management
           </p>
         </div>
 
         {/* Form card */}
-        <div style={{
-          background: "#fff", borderRadius: 18, border: `1px solid ${C.border}`,
-          padding: 28, boxShadow: "0 8px 40px #4F46E514",
-        }}>
+        <div className="login-card">
           <Field label="Email" required>
             <input
               value={email}
@@ -62,9 +56,9 @@ export default function Login({ onLogin }) {
             />
           </Field>
 
-          {err && <p style={{ color: C.red, fontSize: 12, marginBottom: 14 }}>{err}</p>}
+          {err && <p className="login-error">{err}</p>}
 
-          <Btn onClick={handle} style={{ width: "100%", justifyContent: "center" }}>
+          <Btn onClick={handle} className="login-submit-btn">
             Sign In →
           </Btn>
         </div>

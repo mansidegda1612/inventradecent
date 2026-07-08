@@ -711,9 +711,34 @@ export class GSTInvoicePrinter {
    *                                     Omit to use the built-in defaults.
    */
   static async print(transactionData, type = "SI", companyOverride = null) {
+    // Mobile browsers (esp. Android Chrome / in-app WebViews) frequently fail
+    // to rasterize a hidden 0x0 iframe when their "Save as PDF" print pipeline
+    // runs — instead of the iframe's invoice markup, they end up capturing
+    // whatever is visibly behind it (the underlying page, e.g. the bill list).
+    // Desktop print dialogs don't have this problem, so we only special-case
+    // mobile: generate a real PDF via html2pdf and hand the user that file
+    // directly, bypassing the OS print pipeline entirely.
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+
+    if (isMobile) {
+      try {
+        await this._printOnMobile(transactionData, type, companyOverride);
+        return;
+      } catch (err) {
+        console.error("Mobile PDF generation failed, falling back to print dialog:", err);
+        // fall through to the iframe approach below as a last resort
+      }
+    }
+
     const company = await getCompanyConfig(companyOverride);
     const html = buildInvoiceHTML(transactionData, type, company);
+    this._printViaIframe(html);
+  }
 
+  /**
+   * Desktop/fallback path: hidden iframe + window.print().
+   */
+  static _printViaIframe(html) {
     // Remove any leftover iframe from a previous print call
     const existing = document.getElementById("__gst_invoice_frame__");
     if (existing) existing.remove();
@@ -735,6 +760,32 @@ export class GSTInvoicePrinter {
       // Clean up the iframe after the print dialog closes
       iframe.contentWindow.onafterprint = () => iframe.remove();
     };
+  }
+
+  /**
+   * Mobile path: build an actual PDF Blob (html2pdf, off-screen render — same
+   * as getPDFBlob) and open it in a new tab so the mobile browser's built-in
+   * PDF viewer shows the *real* invoice, with its own working Save/Share
+   * buttons. Falls back to a direct download link if the popup is blocked.
+   */
+  static async _printOnMobile(transactionData, type, companyOverride) {
+    const blob = await this.getPDFBlob(transactionData, type, companyOverride);
+    const blobUrl = URL.createObjectURL(blob);
+    const filename = `${transactionData.bill_no || "invoice"}.pdf`;
+
+    const win = window.open(blobUrl, "_blank");
+    if (!win) {
+      // Popup blocked — force a direct download instead.
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    // Give the new tab/download time to actually read the blob before revoking.
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
   }
 
   /**

@@ -53,12 +53,12 @@ export function TransactionHeader({
       <div className="tr-vdivider" />
       {/* Customer — inline beside invoice fields */}
       <div className="tr-header-segment" >
-        <div style={{ width: "100%" }}>
+        <div className="u-w-full">
           <div className="tr-section-title">
             {type === "PI" ? "Supplier Name" : "Customer Name"}
           </div>
           {cashDebit === "D" ? (
-            <div style={{ width: 220 }}>
+            <div className="u-w220">
               <Dropdown
                 value={customerId}
                 onChange={(v) => onCustomerChange(v)}
@@ -94,7 +94,7 @@ export function TransactionHeader({
           ) : (
             <input
               // className="tr-barcode-input"
-              style={{ maxWidth: 300 }}
+              className="u-maxw300"
               value={customerNameCash}
               onChange={(e) => onCustomerNameChange(e.target.value)}
               placeholder={type === "PI" ? "Supplier Name…" : "Walk-in Customer…"}
@@ -109,22 +109,20 @@ export function TransactionHeader({
         <div>
           <div className="tr-invoice-fields">
             <div>
-              <div className="tr-toolbar-label" style={{ marginBottom: 3 }}>Invoice No *</div>
+              <div className="tr-toolbar-label u-mb3">Invoice No *</div>
               <input
-                className="tr-barcode-input tr-invoice-input-billno"
+                className="tr-barcode-input tr-invoice-input-billno u-w210"
                 value={billNo}
                 onChange={(e) => onBillNoChange(e.target.value)}
-                style={{ width: 210 }}
               />
             </div>
             <div>
-              <div className="tr-toolbar-label" style={{ marginBottom: 3 }}>Date</div>
+              <div className="tr-toolbar-label u-mb3">Date</div>
               <input
                 type="date"
-                className="tr-barcode-input tr-invoice-input-date"
+                className="tr-barcode-input tr-invoice-input-date u-w210"
                 value={date}
                 onChange={(e) => onDateChange(e.target.value)}
-                style={{ width: 210 }}
               />
             </div>
           </div>
@@ -189,8 +187,7 @@ export function CustomerSelection({
         />
       ) : (
         <input
-          className="tr-barcode-input"
-          style={{ width: "100%" }}
+          className="tr-barcode-input u-w-full"
           value={customerNameCash}
           onChange={(e) => onCustomerNameChange(e.target.value)}
           placeholder="Walk-in Customer…"
@@ -222,7 +219,7 @@ export function ProductEntryGrid({ items, onItemUpdate, onItemRemove, isGSTBill,
         <span className="tr-table-card-count">{items.length} items</span>
       </div>
 
-      <div className="tr-scroll">
+      <div className="tr-scroll tr-desktop-table">
         {items.length === 0 ? (
           <div className="tr-empty-state">
             <span className="tr-empty-state-icon">📋</span>
@@ -232,15 +229,15 @@ export function ProductEntryGrid({ items, onItemUpdate, onItemRemove, isGSTBill,
           <table className="tr-items-table-v2">
             <thead>
               <tr>
-                {isGSTBill && <th style={{ width: 28 }}></th>}
-                <th style={{ width: 28 }} className="center">#</th>
+                {isGSTBill && <th className="u-w28"></th>}
+                <th className="u-w28 center">#</th>
                 <th>Product</th>
                 <th className="right">Qty</th>
                 <th className="right">Rate</th>
                 {isGSTBill && <th className="right">Taxable</th>}
                 {isGSTBill && <th className="right">GST</th>}
                 <th className="right">Total</th>
-                <th style={{ width: 36 }}></th>
+                <th className="u-w36"></th>
               </tr>
             </thead>
             <tbody>
@@ -257,6 +254,27 @@ export function ProductEntryGrid({ items, onItemUpdate, onItemRemove, isGSTBill,
               ))}
             </tbody>
           </table>
+        )}
+      </div>
+
+      {/* ── Mobile card list — same data, stacked & editable ── */}
+      <div className="tr-mobile-cards">
+        {items.length === 0 ? (
+          <div className="tr-empty-state">
+            <span className="tr-empty-state-icon">📋</span>
+            <span>No items added — scan a barcode or search above</span>
+          </div>
+        ) : (
+          items.map((item, i) => (
+            <ProductEntryCard
+              key={i}
+              item={item}
+              index={i}
+              onUpdate={onItemUpdate}
+              onRemove={onItemRemove}
+              isGSTBill={isGSTBill}
+            />
+          ))
         )}
       </div>
 
@@ -339,7 +357,7 @@ function ProductEntryRow({ item, index, onUpdate, onRemove, isGSTBill, qtyFocusR
             </button>
           </td>
         )}
-        <td className="center" style={{ color: "var(--tr-hint)", fontSize: 11 }}>
+        <td className="center tr-hint-text u-fs11">
           {index + 1}
         </td>
         <td>
@@ -429,6 +447,115 @@ function ProductEntryRow({ item, index, onUpdate, onRemove, isGSTBill, qtyFocusR
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PRODUCT ENTRY CARD (mobile equivalent of ProductEntryRow)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ProductEntryCard({ item, index, onUpdate, onRemove, isGSTBill }) {
+  const [open, setOpen] = useState(false);
+  const lineTotal = (item.taxable_amount || 0) + (item.CGST || 0) + (item.SGST || 0);
+  const totalGST = (item.CGST || 0) + (item.SGST || 0);
+
+  const handleMaxDigits = (maxDigits) => (e) => {
+    const allowed = ["Backspace", "Delete", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Tab", "Enter"];
+    if (allowed.includes(e.key)) return;
+    if (e.key === "-") { e.preventDefault(); return; }
+    const digits = e.target.value.replace(/[^0-9]/g, "");
+    if (digits.length >= maxDigits) e.preventDefault();
+  };
+
+  return (
+    <div className="tr-item-card">
+      <div className="tr-item-card-head">
+        <span className="tr-item-card-index">#{index + 1}</span>
+        <span className="tr-item-card-name" title={item.name}>{item.name}</span>
+        <button type="button" className="tr-remove-btn" onClick={() => onRemove(index)} title="Remove item">×</button>
+      </div>
+
+      <div className="tr-item-card-row">
+        <div className="tr-item-card-field">
+          <label className="tr-item-card-label">Qty</label>
+          <input
+            type="number"
+            className="tr-cell-input tr-item-card-input"
+            value={item.qty}
+            onChange={(e) => onUpdate(index, "qty", e.target.value)}
+            onKeyDown={handleMaxDigits(4)}
+          />
+        </div>
+        <div className="tr-item-card-field">
+          <label className="tr-item-card-label">Rate</label>
+          <input
+            type="number"
+            className="tr-cell-input tr-item-card-input"
+            value={item.rate}
+            onChange={(e) => onUpdate(index, "rate", e.target.value)}
+            onKeyDown={handleMaxDigits(7)}
+          />
+        </div>
+      </div>
+
+      {isGSTBill && (
+        <div className="tr-item-card-row">
+          <div className="tr-item-card-field tr-item-card-field-readonly">
+            <label className="tr-item-card-label">Taxable</label>
+            <span className="tr-item-card-readonly-value">{fmtNum(item.taxable_amount)}</span>
+          </div>
+          <div className="tr-item-card-field tr-item-card-field-readonly">
+            <label className="tr-item-card-label">GST</label>
+            <span className="tr-item-card-readonly-value">{fmtNum(totalGST)}</span>
+          </div>
+        </div>
+      )}
+
+      {isGSTBill && (
+        <>
+          <button type="button" className={`tr-item-card-gst-toggle ${open ? "open" : ""}`} onClick={() => setOpen(o => !o)}>
+            GST breakdown {open ? "▲" : "▼"}
+          </button>
+          {open && (
+            <div className="tr-item-card-gst-detail">
+              <div className="tr-gst-field">
+                <label className="tr-gst-label">CGST %</label>
+                <input
+                  type="number" min={0} max={28} step={0.1}
+                  className="tr-cell-input tr-item-card-input"
+                  value={fmtNum(item.cgst_pct)}
+                  onChange={(e) => onUpdate(index, "cgst_pct", e.target.value)}
+                  onKeyDown={handleMaxDigits(2)}
+                />
+              </div>
+              <div className="tr-gst-field">
+                <label className="tr-gst-label">CGST Amt</label>
+                <span className="tr-gst-value">{fmtNum(item.CGST)}</span>
+              </div>
+              <div className="tr-gst-field">
+                <label className="tr-gst-label">SGST %</label>
+                <input
+                  type="number" min={0} max={28} step={0.1}
+                  className="tr-cell-input tr-item-card-input"
+                  value={fmtNum(item.sgst_pct)}
+                  onChange={(e) => onUpdate(index, "sgst_pct", e.target.value)}
+                  onKeyDown={handleMaxDigits(2)}
+                />
+              </div>
+              <div className="tr-gst-field">
+                <label className="tr-gst-label">SGST Amt</label>
+                <span className="tr-gst-value">{fmtNum(item.SGST)}</span>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      <div className="tr-item-card-total">
+        <span>Total</span>
+        <span className="tr-item-card-total-value">{fmtNum(lineTotal)}</span>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // EXPENSE ENTRY GRID (sidebar card)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -447,7 +574,7 @@ export function ExpenseEntryGrid({ expenses, onExpenseUpdate }) {
                 <td className="tr-exp-name">{exp.label}</td>
                 <td className="tr-exp-sign">{exp.sign}</td>
                 <td>
-                  <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                  <div className="u-flex-center-gap3">
                     <input
                       type="number"
                       className="tr-exp-input"
@@ -631,9 +758,9 @@ export function VoucherHeader({
 
       {/* Party (customer for CR / supplier for CP — same customer table) */}
       <div className="tr-header-segment">
-        <div style={{ width: "100%" }}>
+        <div className="u-w-full">
           <div className="tr-section-title">{partyLabel}</div>
-          <div style={{ width: 220 }}>
+          <div className="u-w220">
             <Dropdown
               value={customerId}
               onChange={(v) => onCustomerChange(v)}
@@ -675,32 +802,29 @@ export function VoucherHeader({
       <div className="tr-header-segment">
         <div className="tr-invoice-fields">
           <div>
-            <div className="tr-toolbar-label" style={{ marginBottom: 3 }}>Voucher No *</div>
+            <div className="tr-toolbar-label u-mb3">Voucher No *</div>
             <input
-              className="tr-barcode-input"
+              className="tr-barcode-input u-w170"
               value={billNo}
               onChange={(e) => onBillNoChange(e.target.value)}
-              style={{ width: 170 }}
             />
           </div>
           <div>
-            <div className="tr-toolbar-label" style={{ marginBottom: 3 }}>Date</div>
+            <div className="tr-toolbar-label u-mb3">Date</div>
             <input
               type="date"
-              className="tr-barcode-input"
+              className="tr-barcode-input u-w170"
               value={date}
               onChange={(e) => onDateChange(e.target.value)}
-              style={{ width: 170 }}
             />
           </div>
           {paymentMode === "Bank" && (
             <div>
-              <div className="tr-toolbar-label" style={{ marginBottom: 3 }}>Ref / Cheque No</div>
+              <div className="tr-toolbar-label u-mb3">Ref / Cheque No</div>
               <input
-                className="tr-barcode-input"
+                className="tr-barcode-input u-w170"
                 value={refNo}
                 onChange={(e) => onRefNoChange(e.target.value)}
-                style={{ width: 170 }}
               />
             </div>
           )}
@@ -710,12 +834,11 @@ export function VoucherHeader({
       <div className="tr-vdivider" />
 
       {/* Narration */}
-      <div className="tr-header-segment" style={{ flex: 1 }}>
-        <div style={{ width: "100%" }}>
+      <div className="tr-header-segment u-flex-1">
+        <div className="u-w-full">
           <div className="tr-section-title">Narration</div>
           <input
-            className="tr-barcode-input"
-            style={{ width: "100%" }}
+            className="tr-barcode-input u-w-full"
             value={narration}
             onChange={(e) => onNarrationChange(e.target.value)}
             placeholder="Optional note…"
@@ -760,7 +883,7 @@ export function BillAdjustmentGrid({
         </button>
       </div>
 
-      <div className="tr-scroll">
+      <div className="tr-scroll tr-desktop-table">
         {loading ? (
           <div className="tr-empty-state"><span>Loading pending bills…</span></div>
         ) : !bills.length ? (
@@ -776,7 +899,7 @@ export function BillAdjustmentGrid({
                 <th>Date</th>
                 <th className="right">Bill Amt</th>
                 <th className="right">Pending</th>
-                <th className="right" style={{ width: 130 }}>Adjust Amt</th>
+                <th className="right u-w130">Adjust Amt</th>
               </tr>
             </thead>
             <tbody>
@@ -800,6 +923,48 @@ export function BillAdjustmentGrid({
               ))}
             </tbody>
           </table>
+        )}
+      </div>
+
+      {/* ── Mobile card list ── */}
+      <div className="tr-mobile-cards">
+        {loading ? (
+          <div className="tr-empty-state"><span>Loading pending bills…</span></div>
+        ) : !bills.length ? (
+          <div className="tr-empty-state">
+            <span className="tr-empty-state-icon">📋</span>
+            <span>No pending bills for this party</span>
+          </div>
+        ) : (
+          bills.map((b) => (
+            <div className="tr-item-card" key={b.transaction_id}>
+              <div className="tr-item-card-head">
+                <span className="tr-item-card-name">{b.bill_no}</span>
+                <span className="tr-item-card-index">{fmtDateShort(b.date)}</span>
+              </div>
+              <div className="tr-item-card-row">
+                <div className="tr-item-card-field tr-item-card-field-readonly">
+                  <label className="tr-item-card-label">Bill Amt</label>
+                  <span className="tr-item-card-readonly-value">{fmtNum(b.final_amount)}</span>
+                </div>
+                <div className="tr-item-card-field tr-item-card-field-readonly">
+                  <label className="tr-item-card-label">Pending</label>
+                  <span className="tr-item-card-readonly-value">{fmtNum(b.pending_amount)}</span>
+                </div>
+              </div>
+              <div className="tr-item-card-field tr-item-card-field-full">
+                <label className="tr-item-card-label">Adjust Amt</label>
+                <input
+                  type="number"
+                  className="tr-cell-input tr-item-card-input tr-item-card-input-full"
+                  value={adjustments[b.transaction_id] ?? ""}
+                  onChange={(e) =>
+                    onAdjustmentChange(b.transaction_id, e.target.value, b.pending_amount)
+                  }
+                />
+              </div>
+            </div>
+          ))
         )}
       </div>
 

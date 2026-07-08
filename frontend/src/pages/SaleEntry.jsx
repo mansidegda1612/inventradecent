@@ -436,11 +436,11 @@ export default function SaleEntry() {
           columns={[
             {
               key: "cash_debit", label: "Cash/Debit",
-              render: (value) => <span style={{ fontWeight: 600, color: C.text }}>{value}</span>,
+              render: (value) => <span className="u-text u-bold">{value}</span>,
             },
             {
               key: "bill_no", label: "Bill No",
-              render: (value) => <span style={{ fontWeight: 600, color: C.text }}>{value}</span>,
+              render: (value) => <span className="u-text u-bold">{value}</span>,
             },
             {
               key: "date", label: "Date",
@@ -450,7 +450,7 @@ export default function SaleEntry() {
             { key: "item_count", label: "No Items" },
             {
               key: "final_amount", label: "Bill Amount",
-              render: (value) => <span style={{ fontWeight: 600, color: C.text }}>{value}</span>,
+              render: (value) => <span className="u-text u-bold">{value}</span>,
             },
           ]}
           data={list}
@@ -534,8 +534,7 @@ export default function SaleEntry() {
               <input
                 ref={barRef}
                 autoFocus
-                className="tr-barcode-input"
-                style={{ width: 350 }}
+                className="tr-barcode-input u-w350"
                 value={barInput}
                 onChange={(e) => setBarInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && scanBarcode(barInput)}
@@ -544,7 +543,7 @@ export default function SaleEntry() {
             </div>
 
             <span className="tr-toolbar-or">or</span>
-            <div className="tr-toolbar-field" style={{ width: 350 }} >
+            <div className="tr-toolbar-field u-w350">
               {/* <div className="tr-toolbar-field" style={{ flex: 1, minWidth: 0 }}> */}
               <div className="tr-toolbar-label">Select Product</div>
               <Dropdown

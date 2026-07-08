@@ -98,7 +98,7 @@ const CategoryMaster = forwardRef(function CategoryMaster({ onSaved }, ref) {
             onChange={e => setForm({ ...form, name: e.target.value })}
           />
         </Field>
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <div className="u-modal-footer-actions">
           <Btn variant="ghost" onClick={() => setModal(false)}>Cancel</Btn>
           <Btn onClick={save} disabled={loading}>
             {loading ? "Saving..." : "Save"}

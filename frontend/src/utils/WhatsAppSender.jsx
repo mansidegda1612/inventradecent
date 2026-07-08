@@ -166,31 +166,20 @@ function PhonePopup({ onSubmit, onCancel }) {
             if (e.key === "Enter") submit();
             if (e.key === "Escape") onCancel();
           }}
-          style={{
-            width: "100%",
-            padding: "8px 10px",
-            borderRadius: 8,
-            border: `1.5px solid ${error ? C.red : C.border}`,
-            fontSize: 13.5,
-            fontFamily: "inherit",
-            outline: "none",
-            boxSizing: "border-box",
-            color: C.text,
-            background: C.card,
-          }}
+          className={`wa-phone-input ${error ? "wa-phone-input-error" : ""}`}
         />
         {error && (
-          <div style={{ color: C.red, fontSize: 11.5, marginTop: 6, fontWeight: 600 }}>
+          <div className="wa-error-text">
             {error}
           </div>
         )}
       </Field>
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+      <div className="wa-actions">
         <Btn variant="ghost" onClick={onCancel}>
           Cancel
         </Btn>
-        <Btn onClick={submit} style={{ background: "#25D366" }}>
+        <Btn onClick={submit} className="wa-send-btn">
           Send
         </Btn>
       </div>

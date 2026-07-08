@@ -2,6 +2,7 @@ import { useState } from "react";
 import * as XLSX from "xlsx";
 window.XLSX = XLSX; // make it available to DataGrid
 import "./style/global.css";
+import "./style/responsive.css";
 // import "./style/transaction.css";
 
 // Layout
@@ -78,7 +79,7 @@ export default function App() {
       case "inv-reports": return <InventoryReports />;
       case "acc-reports": return <AccountReports />;
       case "fin-reports": return <FinancialReports />;
-      default: return <p style={{ color: "#6B7280" }}>Page not found.</p>;
+      default: return <p className="app-notfound">Page not found.</p>;
     }
   }
 
@@ -100,7 +101,7 @@ export default function App() {
         <span className="mobile-topbar-title">
           <span>Inventra</span>Decent
         </span>
-        <span style={{ fontSize: 12, color: "#6B7280", marginLeft: "auto" }}>
+        <span className="app-role-label">
           {PAGE_LABELS[page] || ""}
         </span>
       </div>

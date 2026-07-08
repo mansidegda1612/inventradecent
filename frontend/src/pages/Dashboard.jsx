@@ -6,15 +6,7 @@ import { callAPI } from "../utils/callserver";
 
 /* ─── Skeleton primitives ─────────────────────────────────────── */
 
-const shimmer = {
-  background: `linear-gradient(90deg, ${C.borderLight} 25%, ${C.hint}22 50%, ${C.borderLight} 75%)`,
-  backgroundSize: "200% 100%",
-  animation: "shimmer 1.4s infinite",
-  borderRadius: 6,
-  display: "block",
-};
-
-// Inject the keyframe once
+// Inject the keyframe once (used by .dash-bone in responsive.css)
 if (typeof document !== "undefined" && !document.getElementById("__shimmer_kf")) {
   const style = document.createElement("style");
   style.id = "__shimmer_kf";
@@ -23,23 +15,13 @@ if (typeof document !== "undefined" && !document.getElementById("__shimmer_kf"))
 }
 
 function Bone({ w = "100%", h = 14, style: extra = {} }) {
-  return <span style={{ ...shimmer, width: w, height: h, ...extra }} />;
+  return <span className="dash-bone" style={{ width: w, height: h, ...extra }} />;
 }
 
 /* Skeleton for a single StatCard */
 function StatCardSkeleton() {
   return (
-    <div
-      style={{
-        background: C.card ?? C.surface ?? "#fff",
-        border: `1px solid ${C.borderLight}`,
-        borderRadius: 12,
-        padding: "18px 20px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-      }}
-    >
+    <div className="dash-statcard-skeleton">
       <Bone w={80} h={11} />
       <Bone w={120} h={28} />
       <Bone w={100} h={11} />
@@ -53,7 +35,7 @@ function TableRowSkeleton({ cols = 4 }) {
   return (
     <tr>
       {Array.from({ length: cols }).map((_, i) => (
-        <td key={i} style={{ padding: "10px 8px" }}>
+        <td key={i} className="dash-skeleton-td">
           <Bone w={widths[i] ?? "80px"} h={12} />
         </td>
       ))}
@@ -150,9 +132,9 @@ export default function Dashboard({ products, sales, purchases, accounts }) {
       {/* Bottom row */}
       <div className="two-col">
         {/* Recent Sales Table */}
-        <Card title="Recent Sales" noPad style={{ maxHeight: 480, overflowY: "auto" }} >
+        <Card title="Recent Sales" noPad className="dash-card-scroll">
           <TableWrap>
-            <table style={{ textAlign: "left" }}>
+            <table className="dash-table-left">
               <thead>
                 <tr>
                   <th>Invoice</th>
@@ -166,7 +148,7 @@ export default function Dashboard({ products, sales, purchases, accounts }) {
                   Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} />)
                 ) : recentSales.length === 0 ? (
                   <tr>
-                    <td colSpan={4} style={{ color: C.hint, textAlign: "center", padding: "16px 0" }}>
+                    <td colSpan={4} className="dash-empty-cell">
                       No recent sales found.
                     </td>
                   </tr>
@@ -174,13 +156,13 @@ export default function Dashboard({ products, sales, purchases, accounts }) {
                   recentSales.map((s) => (
                     <tr key={s.transaction_id}>
                       <td>
-                        <span className="mono" style={{ color: C.accent, fontSize: 12 }}>
+                        <span className="mono u-accent u-fs12">
                           {s.bill_no}
                         </span>
                       </td>
-                      <td style={{ fontWeight: 600, color: C.text }}>{s.customer_name}</td>
-                      <td style={{ color: C.hint }}>{s.date}</td>
-                      <td style={{ color: C.green, fontWeight: 700 }}>{fmt(s.total_amount)}</td>
+                      <td className="u-text u-bold">{s.customer_name}</td>
+                      <td className="u-hint">{s.date}</td>
+                      <td className="u-green u-bold-700">{fmt(s.total_amount)}</td>
                     </tr>
                   ))
                 )}
@@ -190,42 +172,24 @@ export default function Dashboard({ products, sales, purchases, accounts }) {
         </Card>
 
         {/* Low Stock Alert */}
-        <Card title="Low Stock Alert"  style={{ maxHeight: 480, overflowY: "auto" }}>
+        <Card title="Low Stock Alert" className="dash-card-scroll">
           {loading ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div className="dash-lowstock-list">
               {Array.from({ length: 4 }).map((_, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "9px 0",
-                    borderBottom: `1px solid ${C.borderLight}`,
-                  }}
-                >
+                <div key={i} className="dash-lowstock-row">
                   <Bone w={140} h={12} />
                   <Bone w={60} h={22} style={{ borderRadius: 20 }} />
                 </div>
               ))}
             </div>
           ) : lowStock.length === 0 ? (
-            <p style={{ color: C.green, fontSize: 13, fontWeight: 600 }}>
+            <p className="dash-healthy-msg">
               ✓ All Product stock levels healthy
             </p>
           ) : (
             lowStock.map((p) => (
-              <div
-                key={p.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "9px 0",
-                  borderBottom: `1px solid ${C.borderLight}`,
-                }}
-              >
-                <span style={{ fontSize: 13, color: C.sub }}>{p.name}</span>
+              <div key={p.id} className="dash-lowstock-row">
+                <span className="dash-lowstock-name">{p.name}</span>
                 <Badge color={C.red}>{p.c_qty} units</Badge>
               </div>
             ))

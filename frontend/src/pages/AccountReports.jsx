@@ -4,7 +4,7 @@ import { fmt, fmtDate, fmtDateShort,fmtDateISO } from "../utils/format";
 import { callAPI } from "../utils/callserver";
 import {
   Btn, Card, Badge, Field, PageHeader, DateFilter, TableWrap,
-  Spinner, DataGrid, Dropdown,BalancePill
+  Spinner, DataGrid, Dropdown, BalancePill, Tabs
 } from "../components/ui";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -21,19 +21,13 @@ function defaultTo() {
 // ─── transaction type badge ───────────────────────────────────────────────────
 function TransBadge({ type }) {
   const map = {
-    SI: { label: "Sale", color: C.green },
-    PI: { label: "Purchase", color: C.blue },
-    CR: { label: "Receipt",  color: C.green },   // NEW — Cash/Bank Receipt
-    CP: { label: "Payment",  color: C.blue }, // NEW — Cash/Bank Payment
+    SI: { label: "Sale", cls: "u-pill-green" },
+    PI: { label: "Purchase", cls: "u-pill-blue" },
+    CR: { label: "Receipt", cls: "u-pill-green" },   // NEW — Cash/Bank Receipt
+    CP: { label: "Payment", cls: "u-pill-blue" }, // NEW — Cash/Bank Payment
   };
-  const { label, color } = map[type] || { label: type, color: C.hint };
-  return (
-    <span style={{
-      background: color + "18", color,
-      borderRadius: 6, padding: "2px 9px",
-      fontSize: 11, fontWeight: 700, letterSpacing: ".04em",
-    }}>{label}</span>
-  );
+  const { label, cls } = map[type] || { label: type, cls: "u-pill-hint" };
+  return <span className={`u-pill ${cls}`}>{label}</span>;
 }
 
 // ─── ledger balance stat (used in DataGrid headerExtra / footerExtra) ─────────
@@ -42,31 +36,12 @@ function LedgerBalanceStat({ label, value, flagDr = "Pay", flagCr = "Rec", size 
   const isDebit = n >= 0;
   const isSmall = size === "small";
   return (
-    <div style={{
-      display: "inline-flex", alignItems: "center", gap: isSmall ? 6 : 8,
-      background: C.card,
-      border: `1.5px solid ${C.border}`,
-      borderRadius: isSmall ? 8 : 10,
-      padding: isSmall ? "5px 10px" : "7px 14px",
-      boxShadow: "0 1px 4px #00000008",
-    }}>
-      <span style={{
-        fontSize: isSmall ? 10 : 11,
-        fontWeight: 700, color: C.muted,
-        textTransform: "uppercase", letterSpacing: ".07em",
-      }}>{label}</span>
-      <span style={{
-        display: "inline-flex", alignItems: "center", gap: 4,
-        background: isDebit ? C.greenBg :C.redBg ,
-        color: isDebit ?  C.green: C.red ,
-        border: `1px solid ${isDebit ?  C.green : C.red }33`,
-        borderRadius: 5, padding: isSmall ? "2px 7px" : "3px 9px",
-        fontSize: isSmall ? 11 : 12, fontWeight: 700,
-        fontFamily: "'JetBrains Mono', monospace",
-      }}>
+    <div className={`u-statpill ${isSmall ? "u-statpill-small" : ""}`}>
+      <span className="u-statpill-label">{label}</span>
+      <span className={`u-statpill-value ${isDebit ? "u-statpill-value-pos" : "u-statpill-value-neg"}`}>
         {fmt(Math.abs(n))}
-        <span style={{ fontSize: 9, fontWeight: 800, opacity: 0.7 }}>
-          {isDebit ?flagCr :  flagDr}
+        <span className="u-statpill-flag">
+          {isDebit ? flagCr : flagDr}
         </span>
       </span>
     </div>
@@ -153,7 +128,7 @@ export default function AccountReports() {
   const ledgerCols = [
     {
       key: "date", label: "Date",
-      render: v => <span style={{ color: C.muted, fontSize: 12 }}>{fmtDateShort(v)}</span>,
+      render: v => <span className="u-muted u-fs12">{fmtDateShort(v)}</span>,
     },
     {
       key: "trans_type", label: "Type", sortable: false,
@@ -162,7 +137,7 @@ export default function AccountReports() {
     {
       key: "bill_no", label: "Bill / Voucher No",
       render: v => (
-        <span style={{  fontSize: 12, color: C.accent, fontWeight: 600 }}>
+        <span className="u-accent u-fs12 u-bold">
           {v || "—"}
         </span>
       ),
@@ -172,10 +147,10 @@ export default function AccountReports() {
       sortable: false,
       render: (_, row) => {
         if (row.trans_type === "PI")
-          return <span style={{ color: C.red, fontWeight: 600 }}>{fmt(row.final_amount)}</span>;
+          return <span className="u-red u-bold">{fmt(row.final_amount)}</span>;
         if (row.trans_type === "CP")   // NEW — payment reduces payable
-          return <span style={{ color: C.green, fontWeight: 600 }}>- {fmt(row.final_amount)}</span>;
-        return <span style={{ color: C.hint }}>—</span>;
+          return <span className="u-green u-bold">- {fmt(row.final_amount)}</span>;
+        return <span className="u-hint">—</span>;
       },
     },
     {
@@ -183,10 +158,10 @@ export default function AccountReports() {
       sortable: false,
       render: (_, row) => {
         if (row.trans_type === "SI")
-          return <span style={{ color: C.green, fontWeight: 600}}>{fmt(row.final_amount)}</span>;
+          return <span className="u-green u-bold">{fmt(row.final_amount)}</span>;
         if (row.trans_type === "CR")   // NEW — receipt reduces receivable
-          return <span style={{ color: C.red, fontWeight: 600 }}>- {fmt(row.final_amount)}</span>;
-        return <span style={{ color: C.hint }}>—</span>;
+          return <span className="u-red u-bold">- {fmt(row.final_amount)}</span>;
+        return <span className="u-hint">—</span>;
       },
     },
     {
@@ -200,14 +175,14 @@ export default function AccountReports() {
   // `outstanding` — shown here as its own column so it's clear why the
   // outstanding figure is lower than opening + sales.
   const outstandingCols = [
-    { key: "name", label: "Customer", render: v => <span style={{ fontWeight: 600, color: C.text }}>{v}</span> },
-    { key: "city", label: "City", render: v => <span style={{ color: C.muted }}>{v || "—"}</span> },
-    { key: "contact_no", label: "Contact", render: v => <span style={{ color: C.muted }}>{v || "—"}</span> },
+    { key: "name", label: "Customer", render: v => <span className="u-text u-bold">{v}</span> },
+    { key: "city", label: "City", render: v => <span className="u-muted">{v || "—"}</span> },
+    { key: "contact_no", label: "Contact", render: v => <span className="u-muted">{v || "—"}</span> },
     { key: "opening", label: "Opening", render: v => <span>{fmt(v)}</span> },
-    { key: "period_sales", label: "Sales", render: v => <span style={{ color: C.green, fontWeight: 600 }}>{fmt(v)}</span> },
+    { key: "period_sales", label: "Sales", render: v => <span className="u-green u-bold">{fmt(v)}</span> },
     {
       key: "period_receipts", label: "Receipts", // NEW
-      render: v => <span style={{ color: C.red, fontWeight: 600 }}>{Number(v) > 0 ? `- ${fmt(v)}` : fmt(v)}</span>,
+      render: v => <span className="u-red u-bold">{Number(v) > 0 ? `- ${fmt(v)}` : fmt(v)}</span>,
     },
     { key: "outstanding", label: "Outstanding", render: v => <BalancePill value={v} /> },
   ];
@@ -216,16 +191,16 @@ export default function AccountReports() {
   // period_payments (CP) is now returned by the backend and subtracted into
   // `payable`, shown here as its own column.
   const supplierCols = [
-    { key: "name", label: "Supplier", render: v => <span style={{ fontWeight: 600, color: C.text }}>{v}</span> },
-    { key: "city", label: "City", render: v => <span style={{ color: C.muted }}>{v || "—"}</span> },
-    { key: "contact_no", label: "Contact", render: v => <span style={{ color: C.muted }}>{v || "—"}</span> },
+    { key: "name", label: "Supplier", render: v => <span className="u-text u-bold">{v}</span> },
+    { key: "city", label: "City", render: v => <span className="u-muted">{v || "—"}</span> },
+    { key: "contact_no", label: "Contact", render: v => <span className="u-muted">{v || "—"}</span> },
     { key: "opening", label: "Opening", render: v => <span>{fmt(Math.abs(v))}</span> },
-    { key: "period_purchases", label: "Purchases", render: v => <span style={{ color: C.blue, fontWeight: 600}}>{fmt(v)}</span> },
+    { key: "period_purchases", label: "Purchases", render: v => <span className="u-blue u-bold">{fmt(v)}</span> },
     {
       key: "period_payments", label: "Payments", // NEW
-      render: v => <span style={{ color: C.green, fontWeight: 600 }}>{Number(v) > 0 ? `- ${fmt(v)}` : fmt(v)}</span>,
+      render: v => <span className="u-green u-bold">{Number(v) > 0 ? `- ${fmt(v)}` : fmt(v)}</span>,
     },
-    { key: "payable", label: "Payable", render: v => <BalancePill value={v}  /> },
+    { key: "payable", label: "Payable", render: v => <BalancePill value={v} /> },
   ];
 
   // ── ledger: opening row injected before real txns ─────────────────────────
@@ -252,10 +227,10 @@ export default function AccountReports() {
     render: (v, row) => {
       if (row._isOpening) {
         if (col.key === "date") return (
-          <span style={{ color: C.accent, fontWeight: 700, fontSize: 12 }}>◈ Opening Balance</span>
+          <span className="u-accent u-bold-700 u-fs12">◈ Opening Balance</span>
         );
         if (col.key === "running_balance") return <BalancePill value={row.running_balance} />;
-        return <span style={{ color: C.hint }}>—</span>;
+        return <span className="u-hint">—</span>;
       }
       return col.render ? col.render(v, row) : (v ?? "—");
     },
@@ -275,36 +250,13 @@ export default function AccountReports() {
       />
 
       {/* Tab bar */}
-      <div style={{
-        display: "flex", gap: 6, marginBottom: 16,
-        padding: "4px", background: C.card,
-        border: `1px solid ${C.border}`, borderRadius: 10,
-        width: "fit-content", boxShadow: "0 1px 4px #00000008",
-      }}>
-        {TABS.map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            style={{
-              padding: "7px 16px", border: "none",
-              borderRadius: 7, fontFamily: "inherit",
-              fontSize: 12.5, fontWeight: 600, cursor: "pointer",
-              transition: "all .15s",
-              background: tab === t.key ? C.accent : "transparent",
-              color: tab === t.key ? "#fff" : C.muted,
-              boxShadow: tab === t.key ? `0 2px 8px ${C.accent}44` : "none",
-            }}
-          >{t.label}</button>
-        ))}
+      <div className="ar-tabbar">
+        <Tabs tabs={TABS} active={tab} onChange={setTab} variant="pill" />
       </div>
 
       {/* Error banner */}
       {error && (
-        <div style={{
-          background: C.redBg, border: `1px solid ${C.red}33`,
-          color: C.red, borderRadius: 10, padding: "10px 16px",
-          marginBottom: 14, fontSize: 13, fontWeight: 600,
-        }}>
+        <div className="u-alert-error">
           ⚠️ {error}
         </div>
       )}
@@ -312,7 +264,7 @@ export default function AccountReports() {
       {/* ── LEDGER TAB ───────────────────────────────────────────────────── */}
       {tab === "ledger" && (
         <>
-          {loading && <div style={{ padding: 40, textAlign: "center"}}><Spinner size={28} /></div>}
+          {loading && <div className="u-center-pad40"><Spinner size={28} /></div>}
 
           {!loading && (
             <DataGrid
@@ -321,8 +273,8 @@ export default function AccountReports() {
               data={ledgerRows ?? []}
               emptyText="Select an account to view transactions"
               headerExtra={
-                <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
-                  <div style={{ minWidth: 220 }}>
+                <div className="ar-ledger-header">
+                  <div className="ar-ledger-account">
                     <Dropdown
                       value={selAcc}
                       onChange={v => setSelAcc(v)}
@@ -352,7 +304,7 @@ export default function AccountReports() {
       {/* ── OUTSTANDING RECEIVABLE TAB ───────────────────────────────────── */}
       {tab === "receivable" && (
         <>
-          {loading && <div style={{ padding: 40, textAlign: "center" }}><Spinner size={28} /></div>}
+          {loading && <div className="u-center-pad40"><Spinner size={28} /></div>}
           {!loading && outstanding && (
             <DataGrid
              pageSize={8}

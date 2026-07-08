@@ -79,7 +79,7 @@ export default function AccountMaster() {
           columns={[
             {
               key: "name", label: "Name",
-              render: (v) => <span style={{ fontWeight: 600, color: C.text }}>{v}</span>,
+              render: (v) => <span className="u-text u-bold">{v}</span>,
             },
             { key: "group_name", label: "Group" },
             { key: "city", label: "City" },

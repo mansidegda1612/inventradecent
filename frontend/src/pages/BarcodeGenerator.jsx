@@ -197,17 +197,10 @@ export default function BarcodeGenerator({ productMasterRef, onProductSaved }) {
         sub="Generate, preview and print product barcodes."
       />
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "360px 1fr",
-          gap: 20,
-          alignItems: "start",
-        }}
-      >
+      <div className="bg-grid">
         {/* ── LEFT: Product Selection ── */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <Card title="Select Product"style={{ overflow: "visible" }}>
+        <div className="bg-col">
+          <Card title="Select Product" className="bg-card-overflow-visible">
             <Field label="Product">
               <Dropdown
                 value={selectedId}
@@ -220,45 +213,18 @@ export default function BarcodeGenerator({ productMasterRef, onProductSaved }) {
 
             {/* Product Details */}
             {product ? (
-              <div style={{ marginTop: 4 }}>
+              <div className="bg-details-list">
                 {details.map(({ label, value, mono }) => (
-                  <div
-                    key={label}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      fontSize: 12.5,
-                      padding: "7px 0",
-                      borderBottom: `1px solid ${C.borderLight}`,
-                    }}
-                  >
-                    <span style={{ color: C.hint, fontWeight: 500 }}>{label}</span>
-                    <span
-                      style={{
-                        fontWeight: 600,
-                        color: C.text,
-                        fontFamily: mono
-                          ? "'JetBrains Mono', 'Courier New', monospace"
-                          : "inherit",
-                        fontSize: mono ? 12 : 12.5,
-                      }}
-                    >
+                  <div key={label} className="bg-detail-row">
+                    <span className="bg-detail-label">{label}</span>
+                    <span className={`bg-detail-value ${mono ? "bg-detail-value-mono" : ""}`}>
                       {value}
                     </span>
                   </div>
                 ))}
               </div>
             ) : (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: "20px 0",
-                  textAlign: "center",
-                  color: C.hint,
-                  fontSize: 12,
-                }}
-              >
+              <div className="bg-empty-detail">
                 No product selected
               </div>
             )}
@@ -266,45 +232,15 @@ export default function BarcodeGenerator({ productMasterRef, onProductSaved }) {
 
           {/* ── Print Count Card ── */}
           <Card title="Print Options">
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                }}
-              >
-                <label
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: C.sub,
-                    whiteSpace: "nowrap",
-                    flexShrink: 0,
-                    minWidth: 110,
-                  }}
-                >
+            <div className="bg-printopts">
+              <div className="bg-stepper-row">
+                <label className="bg-stepper-label">
                   Number of Copies
                 </label>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+                <div className="bg-stepper-wrap">
                   <button
                     onClick={() => setPrintCount((c) => Math.max(1, c - 1))}
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 8,
-                      border: `1.5px solid ${C.border}`,
-                      background: C.card,
-                      color: C.sub,
-                      fontSize: 18,
-                      lineHeight: 1,
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                      fontFamily: "inherit",
-                    }}
+                    className="bg-stepper-btn"
                   >
                     −
                   </button>
@@ -316,36 +252,11 @@ export default function BarcodeGenerator({ productMasterRef, onProductSaved }) {
                     onChange={(e) =>
                       setPrintCount(Math.max(1, Math.min(500, Number(e.target.value) || 1)))
                     }
-                    style={{
-                      width: "100%",
-                      height: 32,
-                      padding: "0 10px",
-                      textAlign: "center",
-                      fontSize: 14,
-                      fontWeight: 700,
-                      fontFamily: "'JetBrains Mono', monospace",
-                      borderRadius: 8,
-                      border: `1.5px solid ${C.border}`,
-                    }}
+                    className="bg-stepper-input"
                   />
                   <button
                     onClick={() => setPrintCount((c) => Math.min(500, c + 1))}
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 8,
-                      border: `1.5px solid ${C.border}`,
-                      background: C.card,
-                      color: C.sub,
-                      fontSize: 18,
-                      lineHeight: 1,
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                      fontFamily: "inherit",
-                    }}
+                    className="bg-stepper-btn"
                   >
                     +
                   </button>
@@ -353,31 +264,20 @@ export default function BarcodeGenerator({ productMasterRef, onProductSaved }) {
               </div>
 
               {/* Quick-select count chips */}
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div className="bg-chip-row">
                 {[1, 5, 10, 20, 50, 100].map((n) => (
                   <button
                     key={n}
                     onClick={() => setPrintCount(n)}
-                    style={{
-                      padding: "4px 12px",
-                      borderRadius: 20,
-                      border: `1.5px solid ${printCount === n ? C.accent : C.border}`,
-                      background: printCount === n ? C.accent + "14" : "transparent",
-                      color: printCount === n ? C.accent : C.muted,
-                      fontSize: 11.5,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                      transition: "all .12s",
-                    }}
+                    className={`bg-chip ${printCount === n ? "bg-chip-active" : ""}`}
                   >
                     {n}
                   </button>
                 ))}
               </div>
 
-              <p style={{ fontSize: 11, color: C.hint, marginTop: -4 }}>
-                Prints <strong style={{ color: C.sub }}>{printCount}</strong>{" "}
+              <p className="bg-hint-text">
+                Prints <strong className="bg-hint-strong">{printCount}</strong>{" "}
                 {printCount === 1 ? "label" : "labels"} of the selected product.
               </p>
             </div>
@@ -385,80 +285,26 @@ export default function BarcodeGenerator({ productMasterRef, onProductSaved }) {
         </div>
 
         {/* ── RIGHT: Preview + Actions ── */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div className="bg-col">
           <Card title="Barcode Preview">
             {/* Canvas area */}
-            <div
-              style={{
-                background: product ? "#ffffff" : C.bg,
-                borderRadius: 12,
-                padding: 24,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                border: `1.5px solid ${C.border}`,
-                minHeight: 200,
-                position: "relative",
-                overflow: "hidden",
-              }}
-            >
+            <div className={`bg-preview-wrap ${product ? "bg-preview-wrap-active" : ""}`}>
               {/* Subtle grid background */}
-              <div
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  backgroundImage: `radial-gradient(${C.border} 1px, transparent 1px)`,
-                  backgroundSize: "20px 20px",
-                  opacity: product ? 0.3 : 0.6,
-                  pointerEvents: "none",
-                }}
-              />
+              <div className={`bg-preview-grid ${product ? "bg-preview-grid-dim" : ""}`} />
               <canvas
                 ref={canvasRef}
                 width={400}
                 height={140}
-                style={{
-                  width: "100%",
-                  maxWidth: 400,
-                  borderRadius: 8,
-                  background: "#fff",
-                  position: "relative",
-                  zIndex: 1,
-                  boxShadow: product
-                    ? "0 4px 24px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04)"
-                    : "none",
-                  border: product ? `1px solid ${C.borderLight}` : "none",
-                }}
+                className={`bg-canvas ${product ? "bg-canvas-active" : ""}`}
               />
 
               {product && (
-                <div
-                  style={{
-                    position: "relative",
-                    zIndex: 1,
-                    marginTop: 12,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "6px 14px",
-                    background: C.accentBg ?? C.accent + "14",
-                    borderRadius: 20,
-                    border: `1px solid ${C.accent}22`,
-                  }}
-                >
-                  <span style={{ fontSize: 11.5, color: C.accent, fontWeight: 700 }}>
+                <div className="bg-barcode-chip">
+                  <span className="bg-barcode-chip-text">
                     🏷 {product.barcode}
                   </span>
-                  <span
-                    style={{
-                      width: 4,
-                      height: 4,
-                      borderRadius: "50%",
-                      background: C.accent + "60",
-                    }}
-                  />
-                  <span style={{ fontSize: 11.5, color: C.muted, fontWeight: 500 }}>
+                  <span className="bg-barcode-chip-dot" />
+                  <span className="bg-barcode-chip-name">
                     {product.name}
                   </span>
                 </div>
@@ -466,47 +312,15 @@ export default function BarcodeGenerator({ productMasterRef, onProductSaved }) {
             </div>
 
             {/* Action buttons */}
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                marginTop: 16,
-                alignItems: "center",
-              }}
-            >
+            <div className="bg-actions-row">
               <button
                 onClick={handlePrint}
                 disabled={!product}
-                style={{
-                  flex: 1,
-                  height: 40,
-                  borderRadius: 9,
-                  border: "none",
-                  background: product ? C.accent : C.border,
-                  color: product ? "#fff" : C.hint,
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: product ? "pointer" : "not-allowed",
-                  fontFamily: "inherit",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 7,
-                  transition: "all .15s",
-                  boxShadow: product ? `0 2px 8px ${C.accent}33` : "none",
-                }}
+                className="bg-print-btn"
               >
                 🖨 Print{" "}
                 {product ? (
-                  <span
-                    style={{
-                      background: "rgba(255,255,255,0.25)",
-                      borderRadius: 6,
-                      padding: "1px 7px",
-                      fontSize: 11.5,
-                      fontFamily: "'JetBrains Mono', monospace",
-                    }}
-                  >
+                  <span className="bg-print-count-badge">
                     ×{printCount}
                   </span>
                 ) : null}
@@ -516,7 +330,7 @@ export default function BarcodeGenerator({ productMasterRef, onProductSaved }) {
                 variant="ghost"
                 onClick={handleDownload}
                 disabled={!product}
-                style={{ height: 40, paddingLeft: 16, paddingRight: 16 }}
+                className="bg-download-btn"
               >
                 ⬇ Download PNG
               </Btn>
@@ -525,88 +339,28 @@ export default function BarcodeGenerator({ productMasterRef, onProductSaved }) {
 
           {/* ── Print Summary Card (shows what will print) ── */}
           {product && (
-            <Card
-              style={{
-                background: `linear-gradient(135deg, ${C.accent}08 0%, ${C.accent}04 100%)`,
-                border: `1.5px solid ${C.accent}20`,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  flexWrap: "wrap",
-                  gap: 10,
-                }}
-              >
+            <Card className="bg-summary-card">
+              <div className="bg-summary-row">
                 <div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      textTransform: "uppercase",
-                      letterSpacing: ".08em",
-                      color: C.muted,
-                      marginBottom: 4,
-                    }}
-                  >
+                  <div className="bg-summary-label">
                     Print Summary
                   </div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: C.sub,
-                      fontWeight: 500,
-                    }}
-                  >
+                  <div className="bg-summary-title">
                     {product.name}{" "}
-                    <span style={{ color: C.hint }}>·</span>{" "}
-                    <span
-                      style={{
-                        fontFamily: "'JetBrains Mono', monospace",
-                        fontSize: 12,
-                        color: C.muted,
-                      }}
-                    >
+                    <span className="u-hint">·</span>{" "}
+                    <span className="bg-summary-barcode">
                       {product.barcode}
                     </span>
                   </div>
                 </div>
 
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    background: C.accent + "14",
-                    border: `1px solid ${C.accent}30`,
-                    borderRadius: 10,
-                    padding: "8px 16px",
-                  }}
-                >
-                  <span style={{ fontSize: 20 }}>🏷</span>
+                <div className="bg-summary-count-box">
+                  <span className="bg-summary-count-icon">🏷</span>
                   <div>
-                    <div
-                      style={{
-                        fontSize: 22,
-                        fontWeight: 800,
-                        color: C.accent,
-                        fontFamily: "'JetBrains Mono', monospace",
-                        lineHeight: 1.1,
-                      }}
-                    >
+                    <div className="bg-summary-count-num">
                       {printCount}
                     </div>
-                    <div
-                      style={{
-                        fontSize: 10,
-                        color: C.accent + "99",
-                        fontWeight: 700,
-                        textTransform: "uppercase",
-                        letterSpacing: ".06em",
-                      }}
-                    >
+                    <div className="bg-summary-count-label">
                       {printCount === 1 ? "label" : "labels"}
                     </div>
                   </div>

@@ -370,11 +370,11 @@ export default function PurchaseEntry() {
           columns={[
             {
               key: "cash_debit", label: "Cash/Debit",
-              render: (value) => <span style={{ fontWeight: 600, color: C.text }}>{value}</span>,
+              render: (value) => <span className="u-text u-bold">{value}</span>,
             },
             {
               key: "bill_no", label: "Bill No",
-              render: (value) => <span style={{ fontWeight: 600, color: C.text }}>{value}</span>,
+              render: (value) => <span className="u-text u-bold">{value}</span>,
             },
             {
               key: "date", label: "Date",
@@ -384,7 +384,7 @@ export default function PurchaseEntry() {
             { key: "item_count", label: "No Items" },
             {
               key: "final_amount", label: "Bill Amount",
-              render: (value) => <span style={{ fontWeight: 600, color: C.text }}>{value}</span>,
+              render: (value) => <span className="u-text u-bold">{value}</span>,
             },
           ]}
           data={list}
@@ -453,7 +453,7 @@ export default function PurchaseEntry() {
 
           {/* ── TOOLBAR: Product Search only ─────────────────────────────── */}
           <div className="tr-toolbar">
-            <div className="tr-toolbar-field" style={{ width: 350 }}>
+            <div className="tr-toolbar-field u-w350">
               <div className="tr-toolbar-label">Select Product</div>
               <Dropdown
                 value={productSearch}

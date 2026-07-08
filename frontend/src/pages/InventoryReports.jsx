@@ -3,7 +3,7 @@ import { C } from "../utils/theme";
 import { fmt, fmtDateISO } from "../utils/format";
 import { callAPI } from "../utils/callserver";
 import {
-  Btn, Badge, PageHeader, DateFilter, Spinner, DataGrid,
+  Btn, Badge, PageHeader, DateFilter, Spinner, DataGrid, Tabs,
 } from "../components/ui";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -26,19 +26,9 @@ function StockBadge({ qty, lowstockqty}) {
 // ─── stat chip (used in DataGrid footerExtra) ─────────────────────────────────
 function StatChip({ label, value, color = C.accent }) {
   return (
-    <div style={{
-      display: "inline-flex", alignItems: "center", gap: 8,
-      background: C.card, border: `1.5px solid ${C.border}`,
-      borderRadius: 10, padding: "6px 14px",
-      boxShadow: "0 1px 4px #00000008",
-    }}>
-      <span style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: ".07em" }}>
-        {label}
-      </span>
-      <span style={{
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: 13, fontWeight: 700, color,
-      }}>
+    <div className="u-statpill">
+      <span className="u-statpill-label">{label}</span>
+      <span className="ir-statchip-value" style={{ color }}>
         {value}
       </span>
     </div>
@@ -102,7 +92,7 @@ export default function InventoryReports() {
   const stockCols = [
     {
       key: "name", label: "Product",
-      render: v => <span style={{ fontWeight: 600, color: C.text }}>{v}</span>,
+      render: v => <span className="u-text u-bold">{v}</span>,
     },
     {
       key: "category", label: "Category",
@@ -111,7 +101,7 @@ export default function InventoryReports() {
     {
       key: "barcode", label: "Barcode",
       render: v => (
-        <span style={{ fontSize: 12, color: C.accent, fontWeight: 600 }}>
+        <span className="u-accent u-fs12 u-bold">
           {v || "—"}
         </span>
       ),
@@ -127,18 +117,14 @@ export default function InventoryReports() {
     {
       key: "c_qty", label: "Current Qty",
       render: (_, row) => (
-        <span style={{
-          fontWeight: 700,
-          color: Number(row.c_qty) <= 0 ? C.red : Number(row.c_qty) <= row.lowstockqty ? C.amber : C.green,
-        }}>
+        <span
+          className="u-bold-700"
+          style={{ color: Number(row.c_qty) <= 0 ? C.red : Number(row.c_qty) <= row.lowstockqty ? C.amber : C.green }}
+        >
           {row.c_qty}
         </span>
       ),
     },
-    // {
-    //   key: "stock_value", label: "Stock Value",
-    //   render: v => <span style={{ fontWeight: 700, color: C.green}}>{fmt(v)}</span>,
-    // },
     {
       key: "status", label: "Status", sortable: false,
       render: (_, row) => <StockBadge qty={row.c_qty}  lowstockqty={row.lowstockqty}/>,
@@ -149,7 +135,7 @@ export default function InventoryReports() {
   const movementCols = [
     {
       key: "name", label: "Product",
-      render: v => <span style={{ fontWeight: 600, color: C.text }}>{v}</span>,
+      render: v => <span className="u-text u-bold">{v}</span>,
     },
     {
       key: "category", label: "Category",
@@ -157,12 +143,12 @@ export default function InventoryReports() {
     },
     {
       key: "o_qty", label: "Opening",
-      render: v => <span style={{ color: C.muted }}>{v ?? 0}</span>,
+      render: v => <span className="u-muted">{v ?? 0}</span>,
     },
     {
       key: "purchased", label: "Purchased",
       render: v => (
-        <span style={{ color: C.blue, fontWeight: 600 }}>
+        <span className="u-blue u-bold">
           {Number(v) > 0 ? `+${v}` : v ?? 0}
         </span>
       ),
@@ -170,14 +156,14 @@ export default function InventoryReports() {
     {
       key: "sold", label: "Sold",
       render: v => (
-        <span style={{ color: C.red, fontWeight: 600 }}>
+        <span className="u-red u-bold">
           {Number(v) > 0 ? `−${v}` : v ?? 0}
         </span>
       ),
     },
     {
       key: "c_qty", label: "Closing Qty",
-      render: v => <span style={{ fontWeight: 600, color: C.text }}>{v}</span>,
+      render: v => <span className="u-text u-bold">{v}</span>,
     },
   ];
 
@@ -185,7 +171,7 @@ export default function InventoryReports() {
   const lowCols = [
     {
       key: "name", label: "Product",
-      render: v => <span style={{ fontWeight: 600, color: C.text }}>{v}</span>,
+      render: v => <span className="u-text u-bold">{v}</span>,
     },
     {
       key: "category", label: "Category",
@@ -194,7 +180,7 @@ export default function InventoryReports() {
     {
       key: "barcode", label: "Barcode",
       render: v => (
-        <span style={{ fontSize: 12, color: C.accent, fontWeight: 600 }}>
+        <span className="u-accent u-fs12 u-bold">
           {v || "—"}
         </span>
       ),
@@ -202,10 +188,7 @@ export default function InventoryReports() {
     {
       key: "c_qty", label: "Current Qty",
       render: v => (
-        <span style={{
-          fontWeight: 700,
-          color: Number(v) <= 0 ? C.red : C.amber,
-        }}>
+        <span className="u-bold-700" style={{ color: Number(v) <= 0 ? C.red : C.amber }}>
           {v}
         </span>
       ),
@@ -230,36 +213,13 @@ export default function InventoryReports() {
       />
 
       {/* Tab bar */}
-      <div style={{
-        display: "flex", gap: 6, marginBottom: 16,
-        padding: "4px", background: C.card,
-        border: `1px solid ${C.border}`, borderRadius: 10,
-        width: "fit-content", boxShadow: "0 1px 4px #00000008",
-      }}>
-        {TABS.map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            style={{
-              padding: "7px 16px", border: "none",
-              borderRadius: 7, fontFamily: "inherit",
-              fontSize: 12.5, fontWeight: 600, cursor: "pointer",
-              transition: "all .15s",
-              background: tab === t.key ? C.accent : "transparent",
-              color: tab === t.key ? "#fff" : C.muted,
-              boxShadow: tab === t.key ? `0 2px 8px ${C.accent}44` : "none",
-            }}
-          >{t.label}</button>
-        ))}
+      <div className="ar-tabbar">
+        <Tabs tabs={TABS} active={tab} onChange={setTab} variant="pill" />
       </div>
 
       {/* Error banner */}
       {error && (
-        <div style={{
-          background: C.redBg, border: `1px solid ${C.red}33`,
-          color: C.red, borderRadius: 10, padding: "10px 16px",
-          marginBottom: 14, fontSize: 13, fontWeight: 600,
-        }}>
+        <div className="u-alert-error">
           ⚠️ {error}
         </div>
       )}
@@ -267,7 +227,7 @@ export default function InventoryReports() {
       {/* ── CURRENT STOCK TAB ──────────────────────────────────────────────── */}
       {tab === "stock" && (
         <>
-          {loading && <div style={{ padding: 40, textAlign: "center" }}><Spinner size={28} /></div>}
+          {loading && <div className="u-center-pad40"><Spinner size={28} /></div>}
           {!loading && (
             <DataGrid
               title="Current Stock"
@@ -280,7 +240,7 @@ export default function InventoryReports() {
               ]}
               footerExtra={
                 summary && (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <div className="ir-summary-chips">
                     <StatChip label="Low Stock Items" value={summary.lowCount} color={C.amber} />
                     <StatChip label="Out of Stock" value={summary.outCount} color={C.red} />
                   </div>
@@ -294,7 +254,7 @@ export default function InventoryReports() {
       {/* ── STOCK MOVEMENT TAB ────────────────────────────────────────────── */}
       {tab === "movement" && (
         <>
-          {loading && <div style={{ padding: 40, textAlign: "center" }}><Spinner size={28} /></div>}
+          {loading && <div className="u-center-pad40"><Spinner size={28} /></div>}
           {!loading && (
             <DataGrid
               title="Stock Movement"
@@ -313,7 +273,7 @@ export default function InventoryReports() {
       {/* ── LOW STOCK TAB ─────────────────────────────────────────────────── */}
       {tab === "low" && (
         <>
-          {loading && <div style={{ padding: 40, textAlign: "center" }}><Spinner size={28} /></div>}
+          {loading && <div className="u-center-pad40"><Spinner size={28} /></div>}
           {!loading && (
             <DataGrid
               title="Low Stock Alert"
@@ -326,7 +286,7 @@ export default function InventoryReports() {
               ]}
               footerExtra={
                 summary && (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <div className="ir-summary-chips">
                     <StatChip label="Low Stock Items" value={summary.lowCount} color={C.amber} />
                     <StatChip label="Out of Stock" value={summary.outCount} color={C.red} />
                   </div>

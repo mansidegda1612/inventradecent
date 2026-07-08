@@ -72,7 +72,7 @@ export default function ProductMaster() {
               key: "name",
               label: "Product Name",
               render: (value) => (
-                <span style={{ fontWeight: 600, color: C.text }}>{value}</span>
+                <span className="u-text u-bold">{value}</span>
               ),
             },
             { key: "category_name", label: "Category" },
