@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { C } from "../utils/theme";
 import { fmt, fmtDate, fmtDateShort,fmtDateISO } from "../utils/format";
 import { callAPI } from "../utils/callserver";
@@ -57,7 +57,7 @@ export default function AccountReports() {
   const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(defaultTo);
 
-  // accounts list (for ledger dropdown)
+  // accounts list (for ledger dropdown) — unchanged, not paginated
   const [accounts, setAccounts] = useState([]);
   const [selAcc, setSelAcc] = useState(null);
 
@@ -66,41 +66,66 @@ export default function AccountReports() {
   const [outstanding, setOutstanding] = useState(null);
   const [supplierBal, setSupplierBal] = useState(null);
 
+  // per-tab totals, fed to the lazy DataGrid so it can render page controls
+  const [ledgerTotal, setLedgerTotal] = useState(0);
+  const [outstandingTotal, setOutstandingTotal] = useState(0);
+  const [payableTotal, setPayableTotal] = useState(0);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // ── load accounts list once ──────────────────────────────────────────────
+  // Remembers the last { page, pageSize, search } the active DataGrid sent us,
+  // so an external change (date range / selected account) can re-trigger a
+  // fetch at the same page size instead of guessing one.
+  const loadModelRef = useRef({ page: 1, pageSize: 8 });
+  const isFirstRun = useRef(true);
+
+  // ── load accounts list once (dropdown) — untouched ────────────────────────
   useEffect(() => {
-    callAPI("reports/accounts/accounts-list", "GET")
+     callAPI("customers", "GET")
       .then(rows => {
-        setAccounts(rows || []);
-        if (rows?.length) setSelAcc(rows[0].id);
+        setAccounts(rows.data || []);
+        if (rows.data?.length) setSelAcc(rows.data[0].id);
       })
       .catch(console.error);
   }, []);
 
-  // ── load tab data ─────────────────────────────────────────────────────────
-  const loadTab = useCallback(async (t, acc) => {
+  // ── LEDGER tab: lazy fetch, called by DataGrid on mount / page / search ──
+  const fetchLedger = useCallback(async (loadModel) => {
+    loadModelRef.current = loadModel;
+    if (!selAcc) {
+      setLedger(null);
+      setLedgerTotal(0);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      if (t === "ledger") {
-        if (!acc) return;
-        const data = await callAPI(
-          `reports/accounts/ledger?accountId=${acc}&from=${from}&to=${to}`, "GET"
-        );
-        setLedger(data);
-      } else if (t === "receivable") {
-        const data = await callAPI(
-          `reports/accounts/outstanding?from=${from}&to=${to}`, "GET"
-        );
-        setOutstanding(data);
-      } else if (t === "payable") {
-        const data = await callAPI(
-          `reports/accounts/supplier-balance?from=${from}&to=${to}`, "GET"
-        );
-        setSupplierBal(data);
-      }
+      let url = `reports/accounts/ledger?accountId=${selAcc}&from=${from}&to=${to}&page=${loadModel.page}&limit=${loadModel.pageSize}`;
+      if (loadModel.search) url += `&search=${loadModel.search}`;
+      const data = await callAPI(url, "GET");
+      if (loadModel.exportAll) return data?.txns;
+      setLedger(data);
+      setLedgerTotal(data?.pagination?.total ?? 0);
+    } catch (e) {
+      setError(e.message || "Failed to load data");
+    } finally {
+      setLoading(false);
+    }
+  }, [selAcc, from, to]);
+
+  // ── OUTSTANDING RECEIVABLE tab: lazy fetch ────────────────────────────────
+  const fetchOutstanding = useCallback(async (loadModel) => {
+    loadModelRef.current = loadModel;
+    setLoading(true);
+    setError(null);
+    try {
+      let url = `reports/accounts/outstanding?from=${from}&to=${to}&page=${loadModel.page}&limit=${loadModel.pageSize}`;
+      if (loadModel.search) url += `&search=${loadModel.search}`;
+      const data = await callAPI(url, "GET");
+      if (loadModel.exportAll) return data?.data;
+      setOutstanding(data);
+      setOutstandingTotal(data?.pagination?.total ?? 0);
     } catch (e) {
       setError(e.message || "Failed to load data");
     } finally {
@@ -108,9 +133,40 @@ export default function AccountReports() {
     }
   }, [from, to]);
 
+  // ── OUTSTANDING PAYABLE tab: lazy fetch ───────────────────────────────────
+  const fetchPayable = useCallback(async (loadModel) => {
+    loadModelRef.current = loadModel;
+    setLoading(true);
+    setError(null);
+    try {
+      let url = `reports/accounts/supplier-balance?from=${from}&to=${to}&page=${loadModel.page}&limit=${loadModel.pageSize}`;
+      if (loadModel.search) url += `&search=${loadModel.search}`;
+      const data = await callAPI(url, "GET");
+      if (loadModel.exportAll) return data?.data;
+      setSupplierBal(data);
+      setPayableTotal(data?.pagination?.total ?? 0);
+    } catch (e) {
+      setError(e.message || "Failed to load data");
+    } finally {
+      setLoading(false);
+    }
+  }, [from, to]);
+
+  // ── Re-fetch the ACTIVE tab (back to page 1, same page size) whenever the
+  //    date range or the selected ledger account changes. Switching tabs on
+  //    its own doesn't need this — a freshly-mounted lazy DataGrid fetches by
+  //    itself, same as AccountMaster.
   useEffect(() => {
-    loadTab(tab, selAcc);
-  }, [tab, selAcc, from, to, loadTab]);
+    if (isFirstRun.current) { isFirstRun.current = false; return; }
+    const model = { ...loadModelRef.current, page: 1 };
+    if (tab === "ledger") fetchLedger(model);
+    else if (tab === "receivable") fetchOutstanding(model);
+    else if (tab === "payable") fetchPayable(model);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selAcc, from, to]);
+
+  // ── manual "↺ Refresh" for the ledger header button ───────────────────────
+  const refreshLedger = () => fetchLedger({ ...loadModelRef.current });
 
   // ── TABS config ───────────────────────────────────────────────────────────
   const TABS = [
@@ -263,86 +319,86 @@ export default function AccountReports() {
 
       {/* ── LEDGER TAB ───────────────────────────────────────────────────── */}
       {tab === "ledger" && (
-        <>
-          {loading && <div className="u-center-pad40"><Spinner size={28} /></div>}
-
-          {!loading && (
-            <DataGrid
-              pageSize={8}
-              columns={ledgerColsWithOpening}
-              data={ledgerRows ?? []}
-              emptyText="Select an account to view transactions"
-              headerExtra={
-                <div className="ar-ledger-header">
-                  <div className="ar-ledger-account">
-                    <Dropdown
-                      value={selAcc}
-                      onChange={v => setSelAcc(v)}
-                      options={accounts}
-                      keyField="id"
-                      displayField="name"
-                      placeholder="Select account…"
-                      clearable
-                    />
-                  </div>
-                  <Btn small onClick={() => loadTab("ledger", selAcc)}>↺ Refresh</Btn>
-                </div>
-              }
-              footerExtra={
-                ledger && (
-                  <LedgerBalanceStat
-                    label="Closing Balance"
-                    value={ledger.closing}
-                  />
-                )
-              }
-            />
-          )}
-        </>
+        <DataGrid
+          lazy
+          total={ledgerTotal}
+          loading={loading}
+          onFetch={fetchLedger}
+          pageSize={8}
+          columns={ledgerColsWithOpening}
+          data={ledgerRows ?? []}
+          emptyText="Select an account to view transactions"
+          headerExtra={
+            <div className="ar-ledger-header">
+              <div className="ar-ledger-account">
+                <Dropdown
+                  value={selAcc}
+                  onChange={v => setSelAcc(v)}
+                  options={accounts}
+                  keyField="id"
+                  displayField="name"
+                  placeholder="Select account…"
+                  clearable
+                />
+              </div>
+              <Btn small onClick={refreshLedger}>↺ Refresh</Btn>
+            </div>
+          }
+          footerExtra={
+            ledger && (
+              <LedgerBalanceStat
+                label="Closing Balance"
+                value={ledger.closing}
+              />
+            )
+          }
+        />
       )}
 
       {/* ── OUTSTANDING RECEIVABLE TAB ───────────────────────────────────── */}
       {tab === "receivable" && (
-        <>
-          {loading && <div className="u-center-pad40"><Spinner size={28} /></div>}
-          {!loading && outstanding && (
-            <DataGrid
-             pageSize={8}
-              title="Outstanding Receivable"
-              columns={outstandingCols}
-              data={(outstanding.data || []).map((r, i) => ({ ...r, id: r.id ?? i }))}
-              emptyText="No customer accounts found"
-              footerExtra={
-                <LedgerBalanceStat
-                  label="Total Receivable"
-                  value={outstanding.total_outstanding}
-                />
-              }
-            />
-          )}
-        </>
+        <DataGrid
+          lazy
+          total={outstandingTotal}
+          loading={loading}
+          onFetch={fetchOutstanding}
+          pageSize={8}
+          title="Outstanding Receivable"
+          columns={outstandingCols}
+          data={(outstanding?.data || []).map((r, i) => ({ ...r, id: r.id ?? i }))}
+          emptyText="No customer accounts found"
+          footerExtra={
+            outstanding && (
+              <LedgerBalanceStat
+                label="Total Receivable"
+                value={outstanding.total_outstanding}
+              />
+            )
+          }
+        />
       )}
 
       {/* ── OUTSTANDING PAYABLE TAB ──────────────────────────────────────── */}
       {tab === "payable" && (
-        <>
-          {loading && <div style={{ padding: 40, textAlign: "center" }}><Spinner size={28} /></div>}
-          {!loading && supplierBal && (
-            <DataGrid
-             pageSize={8}
-              title="Outstanding Payable"
-              columns={supplierCols}
-              data={(supplierBal.data || []).map((r, i) => ({ ...r, id: r.id ?? i }))}
-              emptyText="No supplier accounts found"
-              footerExtra={
-                <LedgerBalanceStat
-                  label="Total Payable"
-                  value={supplierBal.total_payable}
-                />
-              }
-            />
-          )}
-        </>
+        <DataGrid
+          lazy
+          total={payableTotal}
+          loading={loading}
+          onFetch={fetchPayable}
+          pageSize={8}
+          title="Outstanding Payable"
+          columns={supplierCols}
+          data={(supplierBal?.data || []).map((r, i) => ({ ...r, id: r.id ?? i }))}
+          emptyText="No supplier accounts found"
+          footerExtra={
+            supplierBal && (
+              <LedgerBalanceStat
+                label="Total Payable"
+                value={supplierBal.total_payable}
+              />
+            )
+          }
+        />
       )}
     </div>
   );

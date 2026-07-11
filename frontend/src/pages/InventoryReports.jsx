@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { C } from "../utils/theme";
 import { fmt, fmtDateISO } from "../utils/format";
 import { callAPI } from "../utils/callserver";
@@ -48,38 +48,95 @@ export default function InventoryReports() {
   const [lowData, setLowData] = useState([]);
   const [summary, setSummary] = useState(null);   // { totalStockValue, lowCount, outCount }
 
+  // per-tab totals, fed to the lazy DataGrid so it can render page controls
+  const [stockTotal, setStockTotal] = useState(0);
+  const [movementTotal, setMovementTotal] = useState(0);
+  const [lowTotal, setLowTotal] = useState(0);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // ── load data whenever tab / date range changes ───────────────────────────
-  const loadData = useCallback(async () => {
+  // Remembers the last { page, pageSize, search } the active DataGrid sent us,
+  // so an external change (date range, refresh button) can re-trigger a fetch
+  // at the same page size instead of guessing one.
+  const loadModelRef = useRef({ page: 1, pageSize: 8 });
+  const isFirstRun = useRef(true);
+
+  // ── CURRENT STOCK tab: lazy fetch, called by DataGrid on mount/page/search ─
+  const fetchStock = useCallback(async (loadModel) => {
+    loadModelRef.current = loadModel;
     setLoading(true);
     setError(null);
     try {
-      if (tab === "stock") {
-        const data = await callAPI("reports/inventory/current-stock", "GET");
-        setStockData((data?.rows || []).map((r, i) => ({ ...r, id: r.id ?? i })));
-        setSummary(data?.summary || null);
-
-      } else if (tab === "movement") {
-        const data = await callAPI(
-          `reports/inventory/stock-movement?from=${from}&to=${to}`, "GET"
-        );
-        setMovementData((data?.rows || []).map((r, i) => ({ ...r, id: r.id ?? i })));
-
-      } else if (tab === "low") {
-        const data = await callAPI("reports/inventory/low-stock", "GET");
-        setLowData((data?.rows || []).map((r, i) => ({ ...r, id: r.id ?? i })));
-        setSummary(data?.summary || null);
-      }
+      let url = `reports/inventory/current-stock?page=${loadModel.page}&limit=${loadModel.pageSize}`;
+      if (loadModel.search) url += `&search=${loadModel.search}`;
+      const data = await callAPI(url, "GET");
+      if (loadModel.exportAll) return data?.rows;
+      setStockData((data?.rows || []).map((r, i) => ({ ...r, id: r.id ?? i })));
+      setSummary(data?.summary || null);
+      setStockTotal(data?.pagination?.total ?? 0);
     } catch (e) {
       setError(e.message || "Failed to load data");
     } finally {
       setLoading(false);
     }
-  }, [tab, from, to]);
+  }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  // ── STOCK MOVEMENT tab: lazy fetch (depends on date range) ────────────────
+  const fetchMovement = useCallback(async (loadModel) => {
+    loadModelRef.current = loadModel;
+    setLoading(true);
+    setError(null);
+    try {
+      let url = `reports/inventory/stock-movement?from=${from}&to=${to}&page=${loadModel.page}&limit=${loadModel.pageSize}`;
+      if (loadModel.search) url += `&search=${loadModel.search}`;
+      const data = await callAPI(url, "GET");
+      if (loadModel.exportAll) return data?.rows;
+      setMovementData((data?.rows || []).map((r, i) => ({ ...r, id: r.id ?? i })));
+      setMovementTotal(data?.pagination?.total ?? 0);
+    } catch (e) {
+      setError(e.message || "Failed to load data");
+    } finally {
+      setLoading(false);
+    }
+  }, [from, to]);
+
+  // ── LOW STOCK tab: lazy fetch ─────────────────────────────────────────────
+  const fetchLow = useCallback(async (loadModel) => {
+    loadModelRef.current = loadModel;
+    setLoading(true);
+    setError(null);
+    try {
+      let url = `reports/inventory/low-stock?page=${loadModel.page}&limit=${loadModel.pageSize}`;
+      if (loadModel.search) url += `&search=${loadModel.search}`;
+      const data = await callAPI(url, "GET");
+      if (loadModel.exportAll) return data?.rows;
+      setLowData((data?.rows || []).map((r, i) => ({ ...r, id: r.id ?? i })));
+      setSummary(data?.summary || null);
+      setLowTotal(data?.pagination?.total ?? 0);
+    } catch (e) {
+      setError(e.message || "Failed to load data");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ── refetch the ACTIVE tab (back to page 1, same page size) ──────────────
+  const refetchActive = useCallback((overrides = {}) => {
+    const model = { ...loadModelRef.current, page: 1, ...overrides };
+    if (tab === "stock") fetchStock(model);
+    else if (tab === "movement") fetchMovement(model);
+    else if (tab === "low") fetchLow(model);
+  }, [tab, fetchStock, fetchMovement, fetchLow]);
+
+  // ── Stock Movement is date-range driven — re-fetch it when from/to change.
+  //    Switching tabs on its own doesn't need this — a freshly-mounted lazy
+  //    DataGrid fetches by itself, same as AccountMaster.
+  useEffect(() => {
+    if (isFirstRun.current) { isFirstRun.current = false; return; }
+    if (tab === "movement") fetchMovement({ ...loadModelRef.current, page: 1 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to]);
 
   // ── TABS config ───────────────────────────────────────────────────────────
   const TABS = [
@@ -96,7 +153,6 @@ export default function InventoryReports() {
     },
     {
       key: "category", label: "Category",
-      render: v => <Badge color={C.blue}>{v || "—"}</Badge>,
     },
     {
       key: "barcode", label: "Barcode",
@@ -139,7 +195,6 @@ export default function InventoryReports() {
     },
     {
       key: "category", label: "Category",
-      render: v => <Badge color={C.blue}>{v || "—"}</Badge>,
     },
     {
       key: "o_qty", label: "Opening",
@@ -175,7 +230,6 @@ export default function InventoryReports() {
     },
     {
       key: "category", label: "Category",
-      render: v => <Badge color={C.blue}>{v || "—"}</Badge>,
     },
     {
       key: "barcode", label: "Barcode",
@@ -226,75 +280,72 @@ export default function InventoryReports() {
 
       {/* ── CURRENT STOCK TAB ──────────────────────────────────────────────── */}
       {tab === "stock" && (
-        <>
-          {loading && <div className="u-center-pad40"><Spinner size={28} /></div>}
-          {!loading && (
-            <DataGrid
-              title="Current Stock"
-              pageSize={8}
-              columns={stockCols}
-              data={stockData}
-              emptyText="No products found"
-              HeaderButtons={[
-                { key: "refresh", label: "↺ Refresh", icon: "", variant: "", onClick: loadData },
-              ]}
-              footerExtra={
-                summary && (
-                  <div className="ir-summary-chips">
-                    <StatChip label="Low Stock Items" value={summary.lowCount} color={C.amber} />
-                    <StatChip label="Out of Stock" value={summary.outCount} color={C.red} />
-                  </div>
-                )
-              }
-            />
-          )}
-        </>
+        <DataGrid
+          lazy
+          total={stockTotal}
+          loading={loading}
+          onFetch={fetchStock}
+          title="Current Stock"
+          pageSize={10}
+          columns={stockCols}
+          data={stockData}
+          emptyText="No products found"
+          HeaderButtons={[
+            { key: "refresh", label: "↺ Refresh", icon: "", variant: "", onClick: () => refetchActive() },
+          ]}
+          footerExtra={
+            summary && (
+              <div className="ir-summary-chips">
+                <StatChip label="Low Stock Items" value={summary.lowCount} color={C.amber} />
+                <StatChip label="Out of Stock" value={summary.outCount} color={C.red} />
+              </div>
+            )
+          }
+        />
       )}
 
       {/* ── STOCK MOVEMENT TAB ────────────────────────────────────────────── */}
       {tab === "movement" && (
-        <>
-          {loading && <div className="u-center-pad40"><Spinner size={28} /></div>}
-          {!loading && (
-            <DataGrid
-              title="Stock Movement"
-              pageSize={8}
-              columns={movementCols}
-              data={movementData}
-              emptyText="No movement data found for the selected period"
-              HeaderButtons={[
-                { key: "refresh", label: "↺ Refresh", icon: "", variant: "", onClick: loadData },
-              ]}
-            />
-          )}
-        </>
+        <DataGrid
+          lazy
+          total={movementTotal}
+          loading={loading}
+          onFetch={fetchMovement}
+          title="Stock Movement"
+          pageSize={10}
+          columns={movementCols}
+          data={movementData}
+          emptyText="No movement data found for the selected period"
+          HeaderButtons={[
+            { key: "refresh", label: "↺ Refresh", icon: "", variant: "", onClick: () => refetchActive() },
+          ]}
+        />
       )}
 
       {/* ── LOW STOCK TAB ─────────────────────────────────────────────────── */}
       {tab === "low" && (
-        <>
-          {loading && <div className="u-center-pad40"><Spinner size={28} /></div>}
-          {!loading && (
-            <DataGrid
-              title="Low Stock Alert"
-              columns={lowCols}
-              pageSize={8}
-              data={lowData}
-              emptyText="✓ All products are well-stocked"
-              HeaderButtons={[
-                { key: "refresh", label: "↺ Refresh", icon: "", variant: "", onClick: loadData },
-              ]}
-              footerExtra={
-                summary && (
-                  <div className="ir-summary-chips">
-                    <StatChip label="Low Stock Items" value={summary.lowCount} color={C.amber} />
-                    <StatChip label="Out of Stock" value={summary.outCount} color={C.red} />
-                  </div>
-                )
-              }
-            />
-          )}
-        </>
+        <DataGrid
+          lazy
+          total={lowTotal}
+          loading={loading}
+          onFetch={fetchLow}
+          title="Low Stock Alert"
+          columns={lowCols}
+          pageSize={10}
+          data={lowData}
+          emptyText="✓ All products are well-stocked"
+          HeaderButtons={[
+            { key: "refresh", label: "↺ Refresh", icon: "", variant: "", onClick: () => refetchActive() },
+          ]}
+          footerExtra={
+            summary && (
+              <div className="ir-summary-chips">
+                <StatChip label="Low Stock Items" value={summary.lowCount} color={C.amber} />
+                <StatChip label="Out of Stock" value={summary.outCount} color={C.red} />
+              </div>
+            )
+          }
+        />
       )}
     </div>
   );

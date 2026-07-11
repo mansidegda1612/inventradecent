@@ -39,15 +39,51 @@ import { createRoot } from "react-dom/client";
 // (the file that exports Modal, Field, Btn — same one used in index.jsx).
 import { Modal, Field, Btn } from "../components/ui";
 import { C } from "../utils/theme";
+import { callAPI } from "./callserver";
 
-// ── STATIC COMPANY CONFIG ────────────────────────────────────────────────────
-// TODO (future scope): fetch this from a company-settings API instead of
-// hardcoding it here, once that table/endpoint exists.
-export const COMPANY_CONFIG = {
+// ── COMPANY CONFIG ───────────────────────────────────────────────────────────
+// DEFAULT_COMPANY is now only a FALLBACK for when GET /company fails (offline,
+// backend down, etc.) or is missing a field. Real values come from the
+// company-settings API — see fetchCompanyConfig() below.
+const DEFAULT_COMPANY = {
   name: "Inventra Decent",
-  upiId: "darshitbhaliya0@okicici",
-  fromMobile: "6353397539", // reserved for future WhatsApp Business API integration
+  upiId: "",
+  fromMobile: "", // reserved for future WhatsApp Business API integration
 };
+
+// Kept exported for any existing code importing COMPANY_CONFIG directly —
+// prefer fetchCompanyConfig() / letting sendWhatsApp fetch it for you instead,
+// since this constant is never updated after Company Settings changes.
+export const COMPANY_CONFIG = DEFAULT_COMPANY;
+
+// Cached per session — cleared by invalidateCompanyCache() (call that right
+// after a successful Company Settings save so the next send picks it up).
+let cachedCompany = null;
+
+export function invalidateCompanyCache() {
+  cachedCompany = null;
+}
+
+async function fetchCompanyConfig(override) {
+  if (override) return { ...override };
+  if (cachedCompany) return cachedCompany;
+
+  try {
+    const res = await callAPI("company", "GET");
+    if (res?.success && res.data) {
+      cachedCompany = {
+        name: res.data.name ,
+        upiId: res.data.upi_id ,
+        fromMobile: res.data.phone,
+        account_holder: res.data.account_holder,
+      };
+      return cachedCompany;
+    }
+  } catch (err) {
+    console.warn("WhatsAppSender: could not fetch company details, using defaults:", err);
+  }
+  return ;
+}
 
 // ── phone helpers ─────────────────────────────────────────────────────────
 export function normalizePhone(phone) {
@@ -66,7 +102,7 @@ export function normalizePhone(phone) {
 // are lenient about "+" — which is exactly why this looked like it "only
 // worked for merchant" links. Building the query string manually with
 // encodeURIComponent avoids this entirely.
-function buildUpiUrl({ billNo, amount, customerName }) {
+function buildUpiUrl(company, { billNo, amount, customerName }) {
   const amt = Number(amount);
   if (!Number.isFinite(amt) || amt <= 0) {
     console.error("buildUpiUrl: invalid amount", amount);
@@ -74,8 +110,8 @@ function buildUpiUrl({ billNo, amount, customerName }) {
   }
 
   const params = {
-    pa: COMPANY_CONFIG.upiId,                    // payee VPA
-    pn: COMPANY_CONFIG.name,                     // payee name
+    pa: company.upiId,                           // payee VPA
+    pn: company.account_holder,                            // payee name
     am: amt.toFixed(2),                          // amount, 2 decimals
     cu: "INR",                                   // currency
     tn: `${billNo}`,                        // transaction note
@@ -97,8 +133,8 @@ function buildUpiUrl({ billNo, amount, customerName }) {
 // https://yourapp.com/pay/INV-0009 which server-side redirects into the UPI
 // intent above. Falls back to the raw UPI intent if the backend call fails
 // or the endpoint doesn't exist yet.
-async function createPayLink({ billNo, amount, customerName }) {
-  const upiUrl = buildUpiUrl({ billNo, amount, customerName });
+async function createPayLink(company, { billNo, amount, customerName }) {
+  const upiUrl = buildUpiUrl(company, { billNo, amount, customerName });
 
   // try {
   //   const res = await fetch("/pay/create", {
@@ -119,7 +155,7 @@ async function createPayLink({ billNo, amount, customerName }) {
 
 // ── message text ──────────────────────────────────────────────────────────
 export function buildBillMessage({ customerName, billNo, amount, payUrl, companyName }) {
-  const company = companyName || COMPANY_CONFIG.name;
+  const company = companyName ;
 
   return (
     `Hi ${customerName || ""},\n\n` +
@@ -270,21 +306,23 @@ async function dispatch(phone, message, pdfBlob, fileName) {
  * Main entry point. Call this from any screen.
  *
  * @param {object} p
- * @param {string} [p.phone]        - customer phone. If omitted, a popup asks for it.
- * @param {string} p.billNo         - bill number (used to create pay link)
- * @param {number} p.amount         - final bill amount
- * @param {string} [p.customerName] - shown in the message greeting
- * @param {Blob}   [p.pdfBlob]      - PDF blob from GSTInvoicePrinter (optional)
- * @param {string} [p.fileName]     - PDF filename, e.g. "Bill-INV203.pdf"
+ * @param {string} [p.phone]           - customer phone. If omitted, a popup asks for it.
+ * @param {string} p.billNo            - bill number (used to create pay link)
+ * @param {number} p.amount            - final bill amount
+ * @param {string} [p.customerName]    - shown in the message greeting
+ * @param {Blob}   [p.pdfBlob]         - PDF blob from GSTInvoicePrinter (optional)
+ * @param {string} [p.fileName]        - PDF filename, e.g. "Bill-INV203.pdf"
+ * @param {object} [p.companyOverride] - skip the GET /company fetch and use this instead
  */
-export async function sendWhatsApp({ phone, billNo, amount, customerName, pdfBlob, fileName }) {
+export async function sendWhatsApp({ phone, billNo, amount, customerName, pdfBlob, fileName, companyOverride }) {
   if (!billNo || amount == null) {
     console.error("sendWhatsApp: billNo and amount are required");
     return false;
   }
 
-  const payUrl = await createPayLink({ billNo, amount, customerName });
-  const message = buildBillMessage({ customerName, billNo, amount, payUrl });
+  const company = await fetchCompanyConfig(companyOverride);
+  const payUrl = await createPayLink(company, { billNo, amount, customerName });
+  const message = buildBillMessage({ customerName, billNo, amount, payUrl, companyName: company.name });
 
   if (phone) {
     await dispatch(phone, message, pdfBlob, fileName);

@@ -1,30 +1,42 @@
 import { useState } from "react";
 import { C } from "../../utils/theme";
+import { useAuth } from "../../context/AuthContext";
 
+// Each item now declares the right(s) needed to see it. `rights: [...]`
+// means "any of these" — used for sections that map to several actions.
 const NAV = [
-  { id: "dashboard",   label: "Dashboard",         icon: "⊞", roles: [1, 2] },
-  { section: "Masters",                                        roles: [1, 2] },
-  { id: "accounts",    label: "Account Master",    icon: "◉", roles: [1, 2]  },
-  { id: "products",    label: "Product Master",    icon: "⬡", roles: [1, 2]  },
-  { id: "barcode",     label: "Barcode Generator", icon: "▦", roles: [1, 2]  },
-  { section: "Transactions",                                   roles: [1, 2]  },
-  { id: "purchase",    label: "Purchase Entry",    icon: "↓", roles: [1, 2]  },
-  { id: "sale",        label: "Sale Entry",        icon: "↑", roles: [1, 2]  },
-   { id: "cash-receipt", label: "Cash/Bank Receipt", icon: "⤓", roles: [1, 2]  },  // NEW
-  { id: "cash-payment", label: "Cash/Bank Payment", icon: "⤒", roles: [1, 2]  },  // NEW
-  { section: "Reports",                                        roles: [1, 2]  },
-  { id: "inv-reports", label: "Inventory Reports", icon: "◑", roles: [1, 2]  },
-  { id: "acc-reports", label: "Account Reports",   icon: "≡", roles: [1, 2]  },
-  { id: "fin-reports", label: "Financial Reports", icon: "◈", roles: [1, 2]  },
-  { section: "Admin",                                          roles: [1] },
-  { id: "users",       label: "User Management",   icon: "⊙", roles:  [1] },
+  { id: "dashboard",   label: "Dashboard",         icon: "⊞", right: "dashboard.view" },
+  { section: "Masters", right: "accounts.view" },
+  { id: "accounts",    label: "Account Master",    icon: "◉", right: "accounts.view" },
+  { id: "products",    label: "Product Master",    icon: "⬡", right: "products.view" },
+  { id: "barcode",     label: "Barcode Generator", icon: "▦", right: "barcode.generate" },
+  { section: "Transactions", rights: ["purchase.view", "sale.view", "cash_receipt.view", "cash_payment.view"] },
+  { id: "purchase",    label: "Purchase Entry",    icon: "↓", right: "purchase.view" },
+  { id: "sale",        label: "Sale Entry",        icon: "↑", right: "sale.view" },
+  { id: "cash-receipt", label: "Cash/Bank Receipt", icon: "⤓", right: "cash_receipt.view" },
+  { id: "cash-payment", label: "Cash/Bank Payment", icon: "⤒", right: "cash_payment.view" },
+  { section: "Reports", rights: ["reports.inventory", "reports.account", "reports.financial"] },
+  { id: "inv-reports", label: "Inventory Reports", icon: "◑", right: "reports.inventory" },
+  { id: "acc-reports", label: "Account Reports",   icon: "≡", right: "reports.account" },
+  { id: "fin-reports", label: "Financial Reports", icon: "◈", right: "reports.financial" },
+  { section: "Admin", rights: ["users.view", "roles.view", "company.view"] },
+  // { id: "users",       label: "User Management",   icon: "⊙", right: "users.view" },
+  // { id: "roles",       label: "Role Management",   icon: "⚿", right: "roles.view" },
+  { id: "company",     label: "Company Settings",  icon: "⚙", right: "company.view" },
 ];
 
-function SidebarContent({ page, setPage, role, onLogout, onClose, expanded, onToggle }) {
+function SidebarContent({ page, setPage, onLogout, onClose, expanded, onToggle }) {
+  const { hasRight, hasAnyRight, user } = useAuth();
+
   const handleNav = (id) => {
     setPage(id);
     onClose?.();
   };
+
+  const visibleNav = NAV.filter(n => {
+    if (n.section) return hasAnyRight(n.rights || [n.right]);
+    return hasRight(n.right);
+  });
 
   return (
     <div className={`sb-root ${expanded ? "sb-expanded" : "sb-collapsed"}`}>
@@ -37,12 +49,11 @@ function SidebarContent({ page, setPage, role, onLogout, onClose, expanded, onTo
               <span className="sb-brand-highlight">Inventra</span>Decent
             </div>
             <div className="sb-subtitle">
-              Accounting & Inventory
+              {user?.role_name || "Accounting & Inventory"}
             </div>
           </div>
         )}
 
-        {/* Toggle / hamburger button */}
         <button
           onClick={onToggle}
           title={expanded ? "Collapse sidebar" : "Expand sidebar"}
@@ -51,7 +62,6 @@ function SidebarContent({ page, setPage, role, onLogout, onClose, expanded, onTo
           {expanded ? "←" : "→"}
         </button>
 
-        {/* Mobile close */}
         {onClose && expanded && (
           <button onClick={onClose} className="sb-close-btn">×</button>
         )}
@@ -59,17 +69,10 @@ function SidebarContent({ page, setPage, role, onLogout, onClose, expanded, onTo
 
       {/* Nav */}
       <div className="sb-nav">
-        {NAV.filter(n => !n.roles || n.roles.includes(role)).map((n, i) => {
+        {visibleNav.map((n, i) => {
           if (n.section) {
-            // In collapsed mode: render a thin divider instead of section label
-            if (!expanded) {
-              return <div key={i} className="sb-section-divider" />;
-            }
-            return (
-              <div key={i} className="sb-section-label">
-                {n.section}
-              </div>
-            );
+            if (!expanded) return <div key={i} className="sb-section-divider" />;
+            return <div key={i} className="sb-section-label">{n.section}</div>;
           }
 
           const active = page === n.id;
@@ -83,18 +86,11 @@ function SidebarContent({ page, setPage, role, onLogout, onClose, expanded, onTo
                 <span className={`sb-nav-icon ${active ? "sb-nav-icon-active" : ""}`}>
                   {n.icon}
                 </span>
-                {expanded && (
-                  <span className="sb-nav-label">
-                    {n.label}
-                  </span>
-                )}
+                {expanded && <span className="sb-nav-label">{n.label}</span>}
               </button>
 
-              {/* Tooltip on collapsed hover */}
               {!expanded && (
-                <span className="sidebar-tooltip sb-tooltip">
-                  {n.label}
-                </span>
+                <span className="sidebar-tooltip sb-tooltip">{n.label}</span>
               )}
             </div>
           );
@@ -116,24 +112,21 @@ function SidebarContent({ page, setPage, role, onLogout, onClose, expanded, onTo
   );
 }
 
-export default function Sidebar({ page, setPage, role, onLogout, mobileOpen, setMobileOpen }) {
-  const [expanded, setExpanded] = useState(false); // collapsed by default
+export default function Sidebar({ page, setPage, onLogout, mobileOpen, setMobileOpen }) {
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <>
-      {/* Desktop sidebar */}
       <div className="sidebar-desktop">
         <SidebarContent
           page={page}
           setPage={setPage}
-          role={role}
           onLogout={onLogout}
           expanded={expanded}
           onToggle={() => setExpanded(e => !e)}
         />
       </div>
 
-      {/* Mobile drawer */}
       <div
         className={`sidebar-overlay ${mobileOpen ? "sidebar-overlay-open" : ""}`}
         onClick={() => setMobileOpen(false)}
@@ -142,10 +135,9 @@ export default function Sidebar({ page, setPage, role, onLogout, mobileOpen, set
         <SidebarContent
           page={page}
           setPage={setPage}
-          role={role}
           onLogout={onLogout}
           onClose={() => setMobileOpen(false)}
-          expanded={true} // always expanded in mobile drawer
+          expanded={true}
           onToggle={() => {}}
         />
       </div>

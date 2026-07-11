@@ -1,92 +1,96 @@
-import { useState } from "react";
-import { C } from "../utils/theme";
-import { Btn, Card, Badge, Modal, Field, PageHeader, TableWrap } from "../components/ui";
+import { useRef, useState } from "react";
+import { Card, PageHeader, DataGrid, ToastProvider, Badge } from "../components/ui/index";
+import { callAPI } from "../utils/callserver";
+import { useAuth } from "../context/AuthContext";
+import UserFormModal from "./UserFormModal";
 
-export default function UserManagement({ users, setUsers }) {
-  const [modal, setModal] = useState(false);
-  const [form, setForm]   = useState({ name: "", email: "", role: "user", active: true });
-  const [edit, setEdit]   = useState(null);
+export default function UserManagement() {
+  const { hasRight } = useAuth();
+  const [list, setList] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [toasts, setToasts] = useState({ open: false, msg: null, type: null });
+  const loadModelRef = useRef({});
+  const userRef = useRef(null);
 
-  const open = (u) => {
-    if (u) { setForm({ ...u }); setEdit(u.id); }
-    else   { setForm({ name: "", email: "", role: "user", active: true }); setEdit(null); }
-    setModal(true);
+  const show = (msg, type = "success") => {
+    setToasts({ open: true, msg, type });
+    setTimeout(() => setToasts({ open: false }), 3000);
   };
 
-  const save = () => {
-    if (!form.name || !form.email) return;
-    if (edit) setUsers(users.map(u => u.id === edit ? { ...form, id: edit } : u));
-    else      setUsers([...users, { ...form, id: Date.now() }]);
-    setModal(false);
+  const fetchUsers = async (loadModel) => {
+    try {
+      loadModelRef.current = loadModel || {};
+      setLoading(true);
+      const res = await callAPI("users", "GET");
+      const rows = res?.data ?? [];
+      setList(rows);
+      setTotal(rows.length);
+      return rows;
+    } catch {
+      show("Error fetching users", "error");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const toggle = (id) => setUsers(users.map(u => u.id === id ? { ...u, active: !u.active } : u));
+  const handleSaved = () => fetchUsers(loadModelRef.current);
 
   return (
     <div>
-      <PageHeader
-        title="User Management"
-        sub="Manage system users and role-based access."
-        action={<Btn onClick={() => open(null)}>+ Add User</Btn>}
-      />
+      <PageHeader title="User Management" sub="Create users, assign a role, and grant any extra rights." />
 
       <Card noPad>
-          <TableWrap>
-            <table>
-          <thead>
-            <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
-          </thead>
-          <tbody>
-            {users.map(u => (
-              <tr key={u.id}>
-                <td style={{ fontWeight: 600, color: C.text }}>{u.name}</td>
-                <td style={{ color: C.muted }}>{u.email}</td>
-                <td><Badge color={u.role === "admin" ? C.accent : C.blue}>{u.role}</Badge></td>
-                <td><Badge color={u.active ? C.green : C.red}>{u.active ? "Active" : "Disabled"}</Badge></td>
-                <td>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <Btn small variant="ghost" onClick={() => open(u)}>Edit</Btn>
-                    <Btn small variant="ghost" onClick={() => toggle(u.id)}>
-                      {u.active ? "Disable" : "Enable"}
-                    </Btn>
-                    {u.id !== 1 && (
-                      <Btn small danger onClick={() => setUsers(users.filter(x => x.id !== u.id))}>
-                        Delete
-                      </Btn>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </TableWrap>
+        <DataGrid
+          title=""
+          columns={[
+            { key: "name", label: "Name", render: v => <span className="u-text u-bold">{v}</span> },
+            { key: "user_id", label: "Login ID" },
+            { key: "role_name", label: "Role", render: v => v || <span className="u-hint">—</span> },
+            {
+              key: "rights", label: "Extra Rights",
+              render: v => {
+                const arr = Array.isArray(v) ? v : [];
+                return arr.length
+                  ? <span className="u-muted u-fs12">+{arr.length} extra</span>
+                  : <span className="u-hint">Role default</span>;
+              },
+            },
+            {
+              key: "is_active", label: "Status",
+              render: v => v ? <Badge color="#1D9E75">Active</Badge> : <Badge color="#E24B4A">Disabled</Badge>,
+            },
+            {
+              key: "last_login", label: "Last Login",
+              render: v => v ? new Date(v).toLocaleString() : <span className="u-hint">Never</span>,
+            },
+          ]}
+          data={list}
+          total={total}
+          loading={loading}
+          onFetch={fetchUsers}
+          HeaderButtons={hasRight("users.create") ? [
+            { key: "Add", label: "Add User", icon: "+", variant: "primary", onClick: () => userRef.current?.openAdd() },
+          ] : []}
+          footerButtons={[
+            ...(hasRight("users.edit") ? [{
+              key: "edit", label: "Edit", icon: "⬇",
+              onClick: (ids, all, focused) => userRef.current?.openEdit(focused),
+            }] : []),
+            ...(hasRight("users.edit") ? [{
+              key: "reset", label: "Reset Password", icon: "⟲",
+              onClick: (ids, all, focused) => userRef.current?.openResetPassword(focused),
+            }] : []),
+            ...(hasRight("users.delete") ? [{
+              key: "del", label: "Delete", icon: "🗑", variant: "danger",
+              onClick: (ids, all, focused) => userRef.current?.openDelete(focused),
+            }] : []),
+          ]}
+        />
       </Card>
 
-      <Modal open={modal} onClose={() => setModal(false)} title={edit ? "Edit User" : "Add User"}>
-        <Field label="Full Name" required>
-          <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-        </Field>
-        <Field label="Email" required>
-          <input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
-        </Field>
-        <Field label="Role">
-          <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
-            <option value="admin">Admin</option>
-            <option value="user">User</option>
-          </select>
-        </Field>
-        <Field label="Status">
-          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-            <input type="checkbox" checked={form.active} onChange={e => setForm({ ...form, active: e.target.checked })} />
-            <span>Active</span>
-          </label>
-        </Field>
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <Btn variant="ghost" onClick={() => setModal(false)}>Cancel</Btn>
-          <Btn onClick={save}>Save</Btn>
-        </div>
-      </Modal>
+      <UserFormModal ref={userRef} onSaved={handleSaved} />
+      <ToastProvider open={toasts.open} msg={toasts.msg} type={toasts.type} />
     </div>
   );
 }

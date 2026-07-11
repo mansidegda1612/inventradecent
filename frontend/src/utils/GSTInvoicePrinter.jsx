@@ -3,9 +3,9 @@
 // Reusable GST Invoice generator — supports Sales (SI) and Purchase (PI).
 // Usage:
 //   import { GSTInvoicePrinter } from "./GSTInvoicePrinter";
-//   GSTInvoicePrinter.print(transactionData, "SI");                 // Sales Invoice
+//   GSTInvoicePrinter.print(transactionData, "SI");                 // Sales Invoice — fetches company from GET /company
 //   GSTInvoicePrinter.print(transactionData, "PI");                 // Purchase Invoice
-//   GSTInvoicePrinter.print(transactionData, "SI", companyFromAPI); // override company/bank/logo
+//   GSTInvoicePrinter.print(transactionData, "SI", companyOverride); // optional 3rd arg still overrides everything, skips the API call
 //
 //   // NEW: get a real PDF Blob (for WhatsApp share, download, upload, etc.)
 //   const pdfBlob = await GSTInvoicePrinter.getPDFBlob(transactionData, "SI");
@@ -48,12 +48,15 @@
 //   different QR/logo host later, make sure it does too.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Adjust this import path to wherever callAPI lives in your project (same
+// helper used everywhere else — GET/POST/PUT via fetch + Bearer token).
+import { callAPI ,resolveAssetUrl } from "../utils/callserver";
+
 // ── Company Config ────────────────────────────────────────────────────────────
-// TODO: Replace the defaults below with an API call when the backend is ready:
-//   const res = await fetch("/api/company-settings");
-//   return { ...DEFAULT_COMPANY, ...await res.json() };
-// Until then, pass a companyOverride object into print()/getHTML() to test
-// dynamic data without touching this file again.
+// DEFAULT_COMPANY is now only a FALLBACK — used if the API call fails (e.g.
+// offline printing, or the backend isn't reachable) or for any individual
+// field the company-settings table doesn't have filled in yet. Real data
+// comes from GET /company (see fetchCompanyFromApi below).
 const DEFAULT_COMPANY = {
   name: "InventraDecent",
   tagline: "Inventory · Billing · Accounting",
@@ -82,11 +85,76 @@ const DEFAULT_COMPANY = {
   ],
 };
 
+
+// ── map backend `company` row -> the nested shape this file uses ───────────
+// The company table (routes/company.js) is flat (bank_name, bank_ifsc, ...);
+// this file's templates expect a nested `bank: {...}` object, and `logo`
+// instead of `logo_url`. This is the only place that mapping happens.
+function mapCompanyRow(row) {
+  if (!row) return {};
+  return {
+    name: row.name,
+    tagline: row.tagline,
+    address: row.address,
+    city: row.city,
+    phone: row.phone,
+    email: row.email,
+    web: row.web,
+    pan: row.pan,
+    gstin: row.gstin,
+    logo: resolveAssetUrl(row.logo_url),
+    bank: {
+      name: row.bank_name,
+      branch: row.bank_branch,
+      acc_number: row.bank_acc_number,
+      ifsc: row.bank_ifsc,
+      upi_id: row.upi_id,
+      account_holder: row.account_holder,
+    },
+    terms: Array.isArray(row.terms) && row.terms.length ? row.terms : undefined,
+  };
+}
+
+// Drop null/undefined/"" keys so a shallow merge with DEFAULT_COMPANY never
+// overwrites a good default with a blank DB field.
+function stripEmpty(obj) {
+  return Object.fromEntries(
+    Object.entries(obj || {}).filter(([, v]) => v !== null && v !== undefined && v !== "")
+  );
+}
+
+// Cached for the session so printing 10 invoices in a row doesn't re-fetch
+// company details 10 times. Cleared by invalidateCompanyCache() — call that
+// after saving Company Settings so the very next print picks up changes
+// without needing a full page reload.
+let cachedCompanyRow = null;
+
+async function fetchCompanyFromApi() {
+  if (cachedCompanyRow) return cachedCompanyRow;
+  try {
+    const res = await callAPI("company", "GET");
+    if (res?.success && res.data) {
+      cachedCompanyRow = res.data;
+      return cachedCompanyRow;
+    }
+  } catch (err) {
+    console.warn("GSTInvoicePrinter: could not fetch company details, using defaults:", err);
+  }
+  return null;
+}
+
+export function invalidateCompanyCache() {
+  cachedCompanyRow = null;
+}
+
 async function getCompanyConfig(override) {
-  // Deep-merge is overkill here; a shallow merge + explicit bank merge covers
-  // the shape we actually use, and keeps this easy to swap for a real fetch().
-  const merged = { ...DEFAULT_COMPANY, ...(override || {}) };
-  merged.bank = { ...DEFAULT_COMPANY.bank, ...((override && override.bank) || {}) };
+  // Explicit override always wins (e.g. a test/preview call) and skips the
+  // network call entirely.
+  const row = override ? null : await fetchCompanyFromApi();
+  const source = override ? override : mapCompanyRow(row);
+
+  const merged = {  ...stripEmpty(source) };
+  merged.bank = {  ...stripEmpty(source.bank) };
   return merged;
 }
 
@@ -139,7 +207,7 @@ function logoHTML(company) {
   if (company.logo) {
     // onerror swaps to an initials badge if the URL fails to load (e.g. offline print)
     return `
-    <img class="inv-logo-img" src="${escapeHtml(company.logo)}" alt="${escapeHtml(company.name)} logo"
+    <img class="inv-logo-img" src="${escapeHtml(company.logo)}" alt="${escapeHtml(company.name)} logo" crossorigin="anonymous"
       onerror="this.outerHTML='<div class=&quot;inv-logo-fallback&quot;>${initial}</div>'"/>`;
   }
   return `<div class="inv-logo-fallback">${initial}</div>`;

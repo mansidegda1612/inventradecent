@@ -393,28 +393,18 @@ export default function SaleEntry() {
 
   const handleWhatsApp = async (focused) => {
     if (!focused) return;
-    const data = await PrepareData(focused);
-
-    // resolve customer name + phone
-    const customerName = data.cash_debit === "D"
-      ? customers.find((c) => c.id === data.customer_id)?.name
-      : data.customer_name_cash;
-
-    const customerPhone = data.cash_debit === "D"
-      ? customers.find((c) => c.id === data.customer_id)?.contact_no
-      : null; // cash customers usually have no stored phone — falls back to "pick a contact" in WhatsApp
-
-
+    //const data = await PrepareData(focused);
+    
     // pdfBlob is optional — pass it once GSTInvoicePrinter can return a Blob
      //const pdfBlob = await GSTInvoicePrinter.getPDFBlob(data, "SI"); // or "PI"
 
   await sendWhatsApp({
-    phone: customerPhone,
-    billNo: data.bill_no,
-    amount: data.final_amount,
-    customerName,
+    phone: focused.contact_no,
+    billNo: focused.bill_no,
+    amount: focused.final_amount,
+    customerName : focused.customer_name,
     //pdfBlob: pdfBlob,
-    fileName: `Bill-${data.bill_no}.pdf`,
+    fileName: `Bill-${focused.bill_no}.pdf`,
   });
 
 

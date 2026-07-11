@@ -1,32 +1,35 @@
 import { useState } from "react";
-import { C } from "../utils/theme";
 import { Btn, Field } from "../components/ui";
 import { callAPI } from "../utils/callserver";
+import { useAuth } from "../context/AuthContext";
 
-export default function Login({ onLogin }) {
+export default function Login() {
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handle = async () => {
-    let res = await callAPI("auth/login", "POST", {
-      "user_id": email,
-      "password": password
-    });
-    if (res.success && res.data) {
-      localStorage.setItem("token", res.data.accessToken);
-      localStorage.setItem("userRole", res.data.user.userrole);
-
-      onLogin(res.data.user.userrole);
+    setErr("");
+    setLoading(true);
+    try {
+      const res = await callAPI("auth/login", "POST", { user_id: email, password });
+      if (res.success && res.data) {
+        login(res.data);
+      } else {
+        setErr(res.message || "Login failed");
+      }
+    } catch {
+      setErr("Unable to reach the server. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    else
-      setErr(res.message);
   };
 
   return (
     <div className="login-page">
       <div className="login-box">
-        {/* Brand */}
         <div className="login-brand-wrap">
           <div className="login-brand">
             <span className="login-brand-highlight">Inventra</span>Decent
@@ -36,20 +39,19 @@ export default function Login({ onLogin }) {
           </p>
         </div>
 
-        {/* Form card */}
         <div className="login-card">
-          <Field label="Email" required>
+          <Field label="Login ID" required>
             <input
               value={email}
               onChange={e => setEmail(e.target.value)}
               type="text"
               autoFocus
+              onKeyDown={e => e.key === "Enter" && handle()}
             />
           </Field>
           <Field label="Password" required>
             <input
               value={password}
-
               onChange={e => setPassword(e.target.value)}
               type="password"
               onKeyDown={e => e.key === "Enter" && handle()}
@@ -58,8 +60,8 @@ export default function Login({ onLogin }) {
 
           {err && <p className="login-error">{err}</p>}
 
-          <Btn onClick={handle} className="login-submit-btn">
-            Sign In →
+          <Btn onClick={handle} className="login-submit-btn" disabled={loading}>
+            {loading ? "Signing In…" : "Sign In →"}
           </Btn>
         </div>
       </div>
