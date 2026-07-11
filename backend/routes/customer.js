@@ -4,11 +4,17 @@ const auth = require("../middleware/AuthMiddleware");
 
 router.use(auth);
 
-// GET /api/customers  — with search, pagination, group filter
+// GET /api/customers  — with search, optional pagination, group filter
+// If page & limit are NOT passed from the GUI, all matching records are returned.
 router.get("/customers/", async (req, res) => {
   // #swagger.tags = ['Customers']
-  const { page = 1, limit = 10, search = "", group = "" } = req.query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const { page, limit, search = "", group = "" } = req.query;
+
+  // Pagination only kicks in when both page & limit are explicitly provided.
+  const usePagination = page !== undefined && limit !== undefined;
+  const pageNum = usePagination ? parseInt(page) : null;
+  const limitNum = usePagination ? parseInt(limit) : null;
+  const offset = usePagination ? (pageNum - 1) * limitNum : 0;
 
   try {
     let where = "WHERE 1=1";
@@ -21,15 +27,35 @@ router.get("/customers/", async (req, res) => {
     if (group) { where += " AND c.group=?"; params.push(group); }
 
     const [countRows] = await pool.query(`SELECT COUNT(*) AS total FROM customer c ${where}`, params);
+
+    const listParams = [...params];
+    let limitClause = "";
+    if (usePagination) {
+      limitClause = " LIMIT ? OFFSET ?";
+      listParams.push(limitNum, offset);
+    }
+
     const [rows] = await pool.query(
-      `SELECT c.*, g.name AS group_name FROM customer c LEFT JOIN \`group\` g ON c.group=g.id ${where} ORDER BY c.name ASC LIMIT ? OFFSET ?`,
-      [...params, parseInt(limit), offset]
+      `SELECT c.*, g.name AS group_name FROM customer c LEFT JOIN \`group\` g ON c.group=g.id ${where} ORDER BY c.name ASC${limitClause}`,
+      listParams
     );
 
     res.json({
       success: true,
       data: rows,
-      pagination: { total: countRows[0].total, page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(countRows[0].total / parseInt(limit)) },
+      pagination: usePagination
+        ? {
+            total: countRows[0].total,
+            page: pageNum,
+            limit: limitNum,
+            totalPages: Math.ceil(countRows[0].total / limitNum),
+          }
+        : {
+            total: countRows[0].total,
+            page: 1,
+            limit: countRows[0].total,
+            totalPages: 1,
+          },
     });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });

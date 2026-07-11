@@ -38,6 +38,11 @@ app.use("/api/",  require("./routes/accountReports"));
 app.use("/api/",  require("./routes/inventoryReport"));
 app.use("/api/",  require("./routes/balanceSheet"));
 app.use("/api/" , require("./routes/whatsappRoutes"));
+app.use("/api/", require("./routes/permissions"));
+app.use("/api/", require("./routes/company"));
+app.use("/uploads", express.static("uploads", {
+  setHeaders: (res) => res.setHeader("Access-Control-Allow-Origin", "*"),
+}));
 
 // ─── Health Check ─────────────────────────────────────────────────────────
 app.get("/", (req, res) => res.json({ success: true, message: "API running" }));

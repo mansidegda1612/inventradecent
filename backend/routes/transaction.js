@@ -12,12 +12,18 @@ router.use(auth);
 router.get("/transactions/", async (req, res) => {
   // #swagger.tags = ['Transactions']
   const {
-    page = 1, limit = 10,
+    page, limit,
     search = "", customer_id = "",
     from = "", to = "",
     type = "",
   } = req.query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+
+  // Pagination only kicks in when both page & limit are explicitly provided
+  // from the GUI. Otherwise all matching records are returned.
+  const usePagination = page !== undefined && limit !== undefined;
+  const pageNum = usePagination ? parseInt(page) : null;
+  const limitNum = usePagination ? parseInt(limit) : null;
+  const offset = usePagination ? (pageNum - 1) * limitNum : 0;
 
   try {
     let where = "WHERE 1=1";
@@ -46,6 +52,13 @@ router.get("/transactions/", async (req, res) => {
       params
     );
 
+    const listParams = [...params];
+    let limitClause = "";
+    if (usePagination) {
+      limitClause = " LIMIT ? OFFSET ?";
+      listParams.push(limitNum, offset);
+    }
+
     // Main list — aggregate item totals from transaction_items
     // (CR/CP rows have no transaction_items, so item_count/CGST/SGST
     //  simply come back as 0 for them — no special-casing needed here)
@@ -62,6 +75,7 @@ router.get("/transactions/", async (req, res) => {
          t.date, 
          t.customer_id,
         ANY_VALUE(IFNULL(c.name ,cc.custname))            AS customer_name,
+        c.contact_no,
          t.taxable_amount,
          t.discount,
          t.ROUNDOFF,
@@ -78,20 +92,26 @@ router.get("/transactions/", async (req, res) => {
        LEFT JOIN transaction_items ti ON ti.transaction_id = t.id
        ${where}
        GROUP BY t.id
-       ORDER BY t.date DESC
-       LIMIT ? OFFSET ?`,
-      [...params, parseInt(limit), offset]
+       ORDER BY t.date DESC${limitClause}`,
+      listParams
     );
 
     res.json({
       success: true,
       data: rows,
-      pagination: {
-        total: countRows[0].total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages: Math.ceil(countRows[0].total / parseInt(limit)),
-      },
+      pagination: usePagination
+        ? {
+            total: countRows[0].total,
+            page: pageNum,
+            limit: limitNum,
+            totalPages: Math.ceil(countRows[0].total / limitNum),
+          }
+        : {
+            total: countRows[0].total,
+            page: 1,
+            limit: countRows[0].total,
+            totalPages: 1,
+          },
     });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });

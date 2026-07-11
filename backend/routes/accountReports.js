@@ -35,6 +35,30 @@ async function q(sql, params = []) {
   return rows;
 }
 
+/**
+ * Optional in-memory pagination.
+ * If page & limit are NOT passed from the GUI, all rows are returned
+ * (pagination.limit === total, totalPages === 1).
+ */
+function paginate(rows, page, limit) {
+  const usePagination = page !== undefined && limit !== undefined;
+  const total = rows.length;
+
+  if (!usePagination) {
+    return { data: rows, pagination: { total, page: 1, limit: total || 0, totalPages: total ? 1 : 0 } };
+  }
+
+  const pageNum = Math.max(parseInt(page) || 1, 1);
+  const limitNum = Math.max(parseInt(limit) || total, 1);
+  const start = (pageNum - 1) * limitNum;
+  const data = rows.slice(start, start + limitNum);
+
+  return {
+    data,
+    pagination: { total, page: pageNum, limit: limitNum, totalPages: Math.ceil(total / limitNum) },
+  };
+}
+
 // ─── GET /ledger ─────────────────────────────────────────────────────────────
 // Returns:
 //   account  — account master row
@@ -44,7 +68,7 @@ async function q(sql, params = []) {
 
 router.get("/reports/accounts/ledger", async (req, res) => {
   try {
-    const { accountId, from, to } = req.query;
+    const { accountId, from, to, page, limit } = req.query;
     if (!accountId) return res.status(400).json({ error: "accountId is required" });
 
     // Fetch account
@@ -108,9 +132,14 @@ router.get("/reports/accounts/ledger", async (req, res) => {
       return { ...t, running_balance: parseFloat(running.toFixed(2)) };
     });
 
+    // Running balance must be computed over the FULL set first (page/limit
+    // must never break the running-balance math), then we paginate for display.
+    const { data: pagedTxns, pagination } = paginate(txnsWithBalance, page, limit);
+
     res.json({
       account: acc,
-      txns: txnsWithBalance,
+      txns: pagedTxns,
+      pagination,
       closing: parseFloat(running.toFixed(2)),
     });
   } catch (err) {
@@ -126,7 +155,7 @@ router.get("/reports/accounts/ledger", async (req, res) => {
 
 router.get("/reports/accounts/outstanding", async (req, res) => {
   try {
-    const { from, to } = req.query;
+    const { from, to, page, limit } = req.query;
     const dateFilter = from && to
       ? "AND DATE(t.date) BETWEEN ? AND ?"
       : "";
@@ -176,8 +205,9 @@ router.get("/reports/accounts/outstanding", async (req, res) => {
     }));
 
     const total_outstanding = data.reduce((s, r) => s + r.outstanding, 0);
+    const { data: pagedData, pagination } = paginate(data, page, limit);
 
-    res.json({ data, total_outstanding: parseFloat(total_outstanding.toFixed(2)) });
+    res.json({ data: pagedData, pagination, total_outstanding: parseFloat(total_outstanding.toFixed(2)) });
   } catch (err) {
     console.error("Outstanding error:", err);
     res.status(500).json({ error: err.message });
@@ -190,7 +220,7 @@ router.get("/reports/accounts/outstanding", async (req, res) => {
 
 router.get("/reports/accounts/supplier-balance", async (req, res) => {
   try {
-    const { from, to } = req.query;
+    const { from, to, page, limit } = req.query;
     const dateFilter = from && to
       ? "AND DATE(t.date) BETWEEN ? AND ?"
       : "";
@@ -241,8 +271,9 @@ router.get("/reports/accounts/supplier-balance", async (req, res) => {
     });
 
     const total_payable = data.reduce((s, r) => s + r.payable, 0);
+    const { data: pagedData, pagination } = paginate(data, page, limit);
 
-    res.json({ data, total_payable: parseFloat(total_payable.toFixed(2)) });
+    res.json({ data: pagedData, pagination, total_payable: parseFloat(total_payable.toFixed(2)) });
   } catch (err) {
     console.error("Supplier balance error:", err);
     res.status(500).json({ error: err.message });
@@ -293,25 +324,5 @@ router.get("/reports/accounts/summary", async (req, res) => {
   }
 });
 
-// ─── GET /accounts-list ──────────────────────────────────────────────────────
-// All customer + supplier accounts for dropdowns (unchanged)
-
-router.get("/reports/accounts/accounts-list", async (_req, res) => {
-  try {
-    const rows = await q(
-      `SELECT c.id, c.name, c.city, c.gstin, c.contact_no,
-              COALESCE(c.opening, 0) AS opening,
-              COALESCE(c.closing, 0) AS closing,
-              g.name AS group_name
-       FROM   customer c
-       LEFT JOIN \`group\` g ON g.id = c.group
-       ORDER  BY g.name, c.name`
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error("Accounts list error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
 
 module.exports = router;

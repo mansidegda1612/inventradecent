@@ -20,6 +20,30 @@ const auth   = require("../middleware/AuthMiddleware");    // your mysql2/promis
 
 router.use(auth);        // your mysql2/promise pool
 
+/**
+ * Optional in-memory pagination.
+ * If page & limit are NOT passed from the GUI, all rows are returned
+ * (pagination.limit === total, totalPages === 1).
+ */
+function paginate(rows, page, limit) {
+  const usePagination = page !== undefined && limit !== undefined;
+  const total = rows.length;
+
+  if (!usePagination) {
+    return { data: rows, pagination: { total, page: 1, limit: total || 0, totalPages: total ? 1 : 0 } };
+  }
+
+  const pageNum = Math.max(parseInt(page) || 1, 1);
+  const limitNum = Math.max(parseInt(limit) || total, 1);
+  const start = (pageNum - 1) * limitNum;
+  const data = rows.slice(start, start + limitNum);
+
+  return {
+    data,
+    pagination: { total, page: pageNum, limit: limitNum, totalPages: Math.ceil(total / limitNum) },
+  };
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1.  GET /current-stock
@@ -28,7 +52,8 @@ router.use(auth);        // your mysql2/promise pool
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/reports/inventory/current-stock", async (req, res) => {
   try {
-  
+    const { page, limit } = req.query;
+
     const [rows] = await db.query(`
       SELECT
         p.id,
@@ -52,8 +77,11 @@ router.get("/reports/inventory/current-stock", async (req, res) => {
     const lowCount        = rows.filter(r => Number(r.c_qty) > 0  && Number(r.c_qty) < r.lowstockqty).length;
     const outCount        = rows.filter(r => Number(r.c_qty) <= 0).length;
 
+    const { data, pagination } = paginate(rows, page, limit);
+
     return res.json({
-      rows,
+      rows: data,
+      pagination,
       summary: {
         totalStockValue: parseFloat(totalStockValue.toFixed(2)),
         lowCount,
@@ -74,6 +102,7 @@ router.get("/reports/inventory/current-stock", async (req, res) => {
 router.get("/reports/inventory/stock-movement", async (req, res) => {
   const from = req.query.from || new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
   const to   = req.query.to   || new Date().toISOString().slice(0, 10);
+  const { page, limit } = req.query;
 
   try {
     const [rows] = await db.query(`
@@ -115,7 +144,8 @@ router.get("/reports/inventory/stock-movement", async (req, res) => {
       ORDER BY p.name
     `, [from, to, from, to, from, to, from, to]);
 
-    return res.json({ rows });
+    const { data, pagination } = paginate(rows, page, limit);
+    return res.json({ rows: data, pagination });
   } catch (err) {
     console.error("inventory/stock-movement", err);
     return res.status(500).json({ error: "Failed to fetch movement data" });
@@ -128,7 +158,8 @@ router.get("/reports/inventory/stock-movement", async (req, res) => {
 //     including out-of-stock items (c_qty <= 0).
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/reports/inventory/low-stock", async (req, res) => {
-  
+  const { page, limit } = req.query;
+
   try {
     const [rows] = await db.query(`
       SELECT
@@ -148,8 +179,11 @@ router.get("/reports/inventory/low-stock", async (req, res) => {
     const lowCount = rows.filter(r => Number(r.c_qty) > 0).length;
     const outCount = rows.filter(r => Number(r.c_qty) <= 0).length;
 
+    const { data, pagination } = paginate(rows, page, limit);
+
     return res.json({
-      rows,
+      rows: data,
+      pagination,
       summary: { lowCount, outCount },
     });
   } catch (err) {
