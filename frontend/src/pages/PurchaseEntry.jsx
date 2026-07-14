@@ -140,6 +140,10 @@ export default function PurchaseEntry() {
     const isgstbill = d.isgstbill == 1 ? true : false;
     let obj = {
       cash_debit: d.cash_debit ?? "C",
+      customer_name : d.customer_name ?? "",
+        city :d.city ?? "",
+      gstin : d.gstin ?? "",
+      contact_no : d.contact_no ?? "",
       customer_id: d.customer_id ?? null,
       customer_name_cash: d.customer_name_cash ?? "",
       bill_no: d.bill_no ?? "",

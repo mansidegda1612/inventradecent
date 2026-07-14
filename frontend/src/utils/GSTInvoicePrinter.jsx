@@ -590,7 +590,7 @@ function buildInvoicePageHTML(data, type, company) {
 
   <!-- ── PAN + TITLE ── -->
   <div class="pan-title-row">
-    <div class="pan-box">PAN : ${escapeHtml(company.pan)}</div>
+    <div class="pan-box">GSTIN : ${escapeHtml(company.gstin)}</div>   
     <div class="invoice-title-center">${invoiceTitle}</div>
     <div class="original-tag">ORIGINAL FOR RECIPIENT</div>
   </div>
@@ -600,11 +600,10 @@ function buildInvoicePageHTML(data, type, company) {
     <div>
       <div class="info-cell-title">${partyLabel}</div>
       <div class="info-cell">
-        <div><span class="info-lbl">M/S</span> ${escapeHtml(data.customer_name || data.customer_name_cash || "—")}</div>
-        <div><span class="info-lbl">Address</span> ${escapeHtml(data.customer_address || "—")}</div>
-        <div><span class="info-lbl">Phone</span> ${escapeHtml(data.customer_phone || "—")}</div>
-        <div><span class="info-lbl">GSTIN</span> ${escapeHtml(data.customer_gstin || "—")}</div>
-        <div><span class="info-lbl">Place of Supply</span> ${escapeHtml(data.place_of_supply || "—")}</div>
+        <div><span class="info-lbl">Name</span> ${escapeHtml(data.customer_name || data.customer_name_cash || "—")}</div>
+        <div><span class="info-lbl">Phone</span> ${escapeHtml(data.contact_no || "—")}</div>
+        <div><span class="info-lbl">GSTIN</span> ${escapeHtml(data.gstin || "—")}</div>
+        <div><span class="info-lbl">City</span> ${escapeHtml(data.city || "—")}</div>
       </div>
     </div>
     <div>
@@ -612,8 +611,7 @@ function buildInvoicePageHTML(data, type, company) {
       <div class="info-cell">
         <div><span class="info-lbl">Invoice No</span> ${escapeHtml(data.bill_no || "—")}</div>
         <div><span class="info-lbl">Invoice Date</span> ${fmtDate(data.date)}</div>
-        <div><span class="info-lbl">Type</span> ${data.cash_debit === "C" ? "Cash" : "Credit / Debit"}</div>
-        <div><span class="info-lbl">Company GSTIN</span> ${escapeHtml(company.gstin)}</div>
+        <div><span class="info-lbl">Type</span> ${data.cash_debit === "C" ? "Cash" : "Debit"}</div>
       </div>
     </div>
   </div>
