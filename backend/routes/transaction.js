@@ -211,7 +211,7 @@ router.get("/transactions/:transaction_id", async (req, res) => {
          t.*,
          c.name    AS customer_name,
          c.gstin,
-         c.address,
+         c.contact_no,
          c.city,
          cc.custname As customer_name_cash,
          u.name    AS created_by
