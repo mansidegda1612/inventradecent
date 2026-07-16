@@ -49,6 +49,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
 
+	_ "github.com/lib/pq"          // pure-Go postgres driver, registers as "postgres"
 	_ "modernc.org/sqlite" // pure-Go sqlite driver, registers as "sqlite"
 )
 
@@ -132,16 +133,41 @@ func main() {
 
 	port := getEnv("PORT", "8081")
 	internalKey := getEnv("WA_INTERNAL_KEY", "change-me-internal-key")
-	dbPath := getEnv("WA_DB_PATH", "./wa_session.db")
 
 	if internalKey == "change-me-internal-key" {
 		log.Println("WARNING: WA_INTERNAL_KEY is using the default placeholder — set it in .env to match your Node backend's value")
 	}
 
+	// WA_DB_DRIVER selects the session store backend:
+	//   "sqlite"   (default) — a local file, e.g. WA_DB_PATH=./wa_session.db
+	//                          Fine for a paid Render plan with a persistent
+	//                          Disk. On Render's FREE tier there is no
+	//                          persistent disk, so this file gets wiped on
+	//                          every restart/redeploy — meaning you'd have
+	//                          to re-scan the QR code constantly.
+	//   "postgres" — points at any Postgres database (e.g. a free instance
+	//                from Neon/Supabase/ElephantSQL, or Render's own free
+	//                Postgres). This is what actually persists the linked
+	//                device across restarts on Render's free tier, since the
+	//                database lives outside this service entirely.
+	dbDriver := getEnv("WA_DB_DRIVER", "sqlite")
+	var dsn string
+
+	if dbDriver == "postgres" {
+		dsn = getEnv("WA_DB_DSN", "")
+		if dsn == "" {
+			log.Fatal("WA_DB_DSN is required when WA_DB_DRIVER=postgres (e.g. postgres://user:pass@host/dbname?sslmode=require)")
+		}
+	} else {
+		dbDriver = "sqlite"
+		dbPath := getEnv("WA_DB_PATH", "./wa_session.db")
+		dsn = fmt.Sprintf("file:%s?_pragma=foreign_keys(1)", dbPath)
+	}
+
 	ctx := context.Background()
 	dbLog := waLog.Stdout("DB", "ERROR", true)
 	var err error
-	container, err = sqlstore.New(ctx, "sqlite", fmt.Sprintf("file:%s?_pragma=foreign_keys(1)", dbPath), dbLog)
+	container, err = sqlstore.New(ctx, dbDriver, dsn, dbLog)
 	if err != nil {
 		log.Fatalf("failed to open session store: %v", err)
 	}
