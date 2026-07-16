@@ -46,6 +46,15 @@
 //   canvas gets "tainted" and that image silently comes out blank in the PDF.
 //   api.qrserver.com sends CORS headers so the QR is fine; if you swap in a
 //   different QR/logo host later, make sure it does too.
+//
+//   LAYOUT NOTE (fixed): the two-column sections (.info-grid, .bottom-grid,
+//   .bank-sign-grid) previously used CSS Grid with default stretch behavior.
+//   html2canvas has unreliable support for CSS Grid track-height calculation,
+//   which showed up as the "Bank Details" cell being stretched vertically in
+//   the generated PDF (it doesn't happen in the live browser print dialog,
+//   only in the offscreen html2canvas render used for getPDFBlob/WhatsApp).
+//   These sections now use flexbox instead of grid — visually identical in a
+//   normal browser, but rendered consistently by html2canvas.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Adjust this import path to wherever callAPI lives in your project (same
@@ -333,18 +342,25 @@ function buildInvoiceStyle() {
   .original-tag { flex: 1; text-align: right; font-size: 9px; font-weight: 600; color: var(--text-muted); }
 
   /* ── Info grid ── */
+  /* NOTE: switched from CSS Grid to Flexbox. html2canvas (used by html2pdf.js
+     for getPDFBlob) has unreliable CSS Grid track-height support, which was
+     causing stretched/mis-sized cells in the generated PDF only (not in the
+     live browser print dialog). Flex renders identically in-browser and is
+     handled correctly by html2canvas. */
   .info-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    align-items: flex-start;
     border: 1px solid var(--border);
     border-top: none;
   }
+  .info-grid > div { flex: 1 1 0; min-width: 0; }
   .info-cell {
     padding: 5px 7px;
     border-right: 1px solid var(--border);
     line-height: 1.7;
   }
-  .info-cell:last-child { border-right: none; }
+  .info-grid > div:last-child .info-cell,
+  .info-grid > div:last-child { border-right: none; }
   .info-cell-title {
     font-size: 9px;
     font-weight: 700;
@@ -392,18 +408,21 @@ function buildInvoiceStyle() {
   .tl { text-align: left; }
 
   /* ── Bottom section ── */
+  /* Same html2canvas-grid fix as .info-grid above. */
   .bottom-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    align-items: flex-start;
     border: 1px solid var(--border);
     border-top: none;   /* sits directly under items-table; no doubled border */
   }
-  .bottom-left { border-right: 1px solid var(--border); padding: 6px 7px; }
-  .bottom-right { padding: 6px 7px; }
+  .bottom-left { flex: 1 1 0; min-width: 0; border-right: 1px solid var(--border); padding: 6px 7px; }
+  .bottom-right { flex: 1 1 0; min-width: 0; padding: 6px 7px; }
 
-  .summary-table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
-  .summary-table td { padding: 2px 4px; }
-  .final-row td {
+  /* Same html2canvas table-in-flex fix as .bank-row above — .bottom-right
+     is a flex item, so this is plain divs instead of a <table>. */
+  .summary-table { width: 100%; font-size: 10.5px; }
+  .summary-row { display: flex; justify-content: space-between; padding: 2px 4px; }
+  .summary-row.final-row {
     background: var(--bg-accent);
     color: var(--accent-dark);   /* dark themed text, not light/white */
     font-size: 12px;
@@ -424,13 +443,17 @@ function buildInvoiceStyle() {
   .words-box .words-label { font-size: 9px; font-weight: 600; color: var(--text-muted); margin-bottom: 2px; }
 
   /* ── Bank + QR + Signatory ── */
+  /* Same html2canvas-grid fix as .info-grid above — this is the section that
+     was visibly stretching vertically in the WhatsApp/PDF output. */
   .bank-sign-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    align-items: flex-start;
     border: 1px solid var(--border);
     border-top: none;
   }
   .bank-cell {
+    flex: 1 1 0;
+    min-width: 0;
     border-right: 1px solid var(--border);
     padding: 6px 7px;
     display: flex;
@@ -445,8 +468,25 @@ function buildInvoiceStyle() {
     letter-spacing: 0.4px;
     margin-bottom: 4px;
   }
-  .bank-details table { font-size: 10px; line-height: 1.8; width: 100%; }
-  .bank-details td:first-child { color: var(--text-muted); width: 78px; }
+  /* NOTE: bank rows are plain flex divs, NOT a <table>. html2canvas has a
+     separate bug (distinct from the grid issue fixed above) where a
+     <table> that is itself nested inside a flex item gets its row heights
+     wildly over-expanded during rasterization — that's what was causing
+     the huge gaps between Name/Branch/Acc/IFSC/UPI rows in the generated
+     PDF, even though the exact same markup looked fine in a live browser
+     tab. Divs instead of a table sidesteps that bug entirely. */
+  .bank-row {
+    display: flex;
+    font-size: 10px;
+    line-height: 1.7;
+  }
+  .bank-row .bank-lbl {
+    color: var(--text-muted);
+    width: 78px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .bank-row .bank-val { flex: 1; min-width: 0; }
 
   .qr-col { text-align: center; flex-shrink: 0; width: 84px; }
   .qr-box {
@@ -464,6 +504,8 @@ function buildInvoiceStyle() {
   .terms-section {
     /* No border here — .bank-sign-grid already draws the outer border for
        this whole row; adding one here doubled up on the right/bottom edges. */
+    flex: 1 1 0;
+    min-width: 0;
     padding: 6px 7px;
   }
   .terms-section ul { padding-left: 14px; }
@@ -549,23 +591,23 @@ function buildInvoicePageHTML(data, type, company) {
 
   // ── Summary right column ──────────────────────────────────────────────────
   const summaryRows = [];
-  summaryRows.push(`<tr><td>Taxable Amount</td><td class="tr">${fmt2(taxableTotal)}</td></tr>`);
+  summaryRows.push(`<div class="summary-row"><span>Taxable Amount</span><span>${fmt2(taxableTotal)}</span></div>`);
   if (isGST) {
-    summaryRows.push(`<tr><td>Add: CGST</td><td class="tr">${fmt2(cgstTotal)}</td></tr>`);
-    summaryRows.push(`<tr><td>Add: SGST</td><td class="tr">${fmt2(sgstTotal)}</td></tr>`);
+    summaryRows.push(`<div class="summary-row"><span>Add: CGST</span><span>${fmt2(cgstTotal)}</span></div>`);
+    summaryRows.push(`<div class="summary-row"><span>Add: SGST</span><span>${fmt2(sgstTotal)}</span></div>`);
   }
   expenseLines.forEach(e => {
     const sign = e.amount < 0 ? "" : e.amount > 0 && e.label.toLowerCase().includes("discount") ? "- " : "+ ";
-    summaryRows.push(`<tr><td>${escapeHtml(e.label)}</td><td class="tr">${sign}${fmt2(Math.abs(e.amount))}</td></tr>`);
+    summaryRows.push(`<div class="summary-row"><span>${escapeHtml(e.label)}</span><span>${sign}${fmt2(Math.abs(e.amount))}</span></div>`);
   });
   if (roundoffAmt !== 0) {
-    summaryRows.push(`<tr><td>Round Off</td><td class="tr">${roundoffAmt > 0 ? "+" : ""}${fmt2(roundoffAmt)}</td></tr>`);
+    summaryRows.push(`<div class="summary-row"><span>Round Off</span><span>${roundoffAmt > 0 ? "+" : ""}${fmt2(roundoffAmt)}</span></div>`);
   }
   summaryRows.push(`
-    <tr class="final-row">
-      <td>Total Amount After Tax</td>
-      <td class="tr">&#8377;${fmt2(finalAmount)}</td>
-    </tr>`);
+    <div class="summary-row final-row">
+      <span>Total Amount After Tax</span>
+      <span>&#8377;${fmt2(finalAmount)}</span>
+    </div>`);
 
   return `
 <div class="page">
@@ -675,9 +717,9 @@ function buildInvoicePageHTML(data, type, company) {
       </div>
     </div>
     <div class="bottom-right">
-      <table class="summary-table">
+      <div class="summary-table">
         ${summaryRows.join("")}
-      </table>
+      </div>
     </div>
   </div>
 
@@ -686,13 +728,11 @@ function buildInvoicePageHTML(data, type, company) {
     <div class="bank-cell">
       <div class="bank-details">
         <div class="bank-title">Bank Details</div>
-        <table>
-          <tr><td>Name</td><td>${escapeHtml(company.bank.name)}</td></tr>
-          <tr><td>Branch</td><td>${escapeHtml(company.bank.branch)}</td></tr>
-          <tr><td>Acc. Number</td><td>${escapeHtml(company.bank.acc_number)}</td></tr>
-          <tr><td>IFSC</td><td>${escapeHtml(company.bank.ifsc)}</td></tr>
-          <tr><td>UPI ID</td><td>${escapeHtml(company.bank.upi_id || "—")}</td></tr>
-        </table>
+        <div class="bank-row"><span class="bank-lbl">Name</span><span class="bank-val">${escapeHtml(company.bank.name)}</span></div>
+        <div class="bank-row"><span class="bank-lbl">Branch</span><span class="bank-val">${escapeHtml(company.bank.branch)}</span></div>
+        <div class="bank-row"><span class="bank-lbl">Acc. Number</span><span class="bank-val">${escapeHtml(company.bank.acc_number)}</span></div>
+        <div class="bank-row"><span class="bank-lbl">IFSC</span><span class="bank-val">${escapeHtml(company.bank.ifsc)}</span></div>
+        <div class="bank-row"><span class="bank-lbl">UPI ID</span><span class="bank-val">${escapeHtml(company.bank.upi_id || "—")}</span></div>
       </div>
       <div class="qr-col">
         ${buildUpiQR(company, data, finalAmount)}

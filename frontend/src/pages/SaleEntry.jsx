@@ -3,7 +3,7 @@ import { C } from "../utils/theme";
 import { fmt, fmtNum, fmtDateShort } from "../utils/format";
 import { callAPI } from "../utils/callserver";
 import { GSTInvoicePrinter } from "../utils/GSTInvoicePrinter";
-import { sendWhatsApp} from "../utils/WhatsAppSender";
+import { sendWhatsApp } from "../utils/WhatsAppSender";
 import {
   Btn,
   Card,
@@ -152,10 +152,10 @@ export default function SaleEntry() {
     const isgstbill = d.isgstbill == 1 ? true : false
     let obj = {
       cash_debit: d.cash_debit ?? "C",
-      customer_name : d.customer_name ?? "",
-      city :d.city ?? "",
-      gstin : d.gstin ?? "",
-      contact_no : d.contact_no ?? "",
+      customer_name: d.customer_name ?? "",
+      city: d.city ?? "",
+      gstin: d.gstin ?? "",
+      contact_no: d.contact_no ?? "",
       customer_id: d.customer_id ?? null,
       customer_name_cash: d.customer_name_cash ?? "",
       bill_no: d.bill_no ?? "",
@@ -394,24 +394,50 @@ export default function SaleEntry() {
 
     await GSTInvoicePrinter.print(printData, "SI");
   };
-
-  const handleWhatsApp = async (focused) => {
+ const handleWhatsApp = async (focused) => {
     if (!focused) return;
-    //const data = await PrepareData(focused);
-    
-    // pdfBlob is optional — pass it once GSTInvoicePrinter can return a Blob
-     //const pdfBlob = await GSTInvoicePrinter.getPDFBlob(data, "SI"); // or "PI"
 
-  await sendWhatsApp({
-    phone: focused.contact_no,
-    billNo: focused.bill_no,
-    amount: focused.final_amount,
-    customerName : focused.customer_name,
-    //pdfBlob: pdfBlob,
-    fileName: `Bill-${focused.bill_no}.pdf`,
-  });
+    if (!focused.bill_no || focused.final_amount == null) {
+      show("Missing bill number or amount", "error");
+      return;
+    }
 
+    try {
+      setLoading(true);
 
+      // `focused` is just the DataGrid row summary — the PDF needs full
+      // item-level detail, same as handlePrint() already fetches.
+      const data = await PrepareData(focused);
+      const pdfBlob = await GSTInvoicePrinter.getPDFBlob(data, "SI");
+
+      // sendWhatsApp() handles everything internally now: fetches company
+      // details from GET /company, builds the UPI pay link + message, asks
+      // for a phone number if focused.contact_no is missing (it's null in
+      // this row), and sends via the whatsmeow-backed WhatsApp connection.
+      const result = await sendWhatsApp({
+        phone: focused.contact_no,
+        billNo: focused.bill_no,
+        amount: focused.final_amount,
+        customerName: focused.customer_name,
+        pdfBlob,
+        fileName: `${focused.bill_no}.pdf`,
+      });
+
+      if (result.cancelled) {
+        // user closed the phone-entry popup without submitting — no toast needed
+        return;
+      }
+      if (!result.success) {
+        show(result.message || "Failed to send WhatsApp message", "error");
+        return;
+      }
+      show("Bill sent on WhatsApp", "success");
+    } catch (err) {
+      console.error("handleWhatsApp failed:", err);
+      show("Error sending WhatsApp message", "error");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -482,7 +508,7 @@ export default function SaleEntry() {
             {
               key: "whatsapp",
               label: "WhatsApp",
-              icon:<WhatsAppIcon />,
+              icon: <WhatsAppIcon />,
               hotkey: "ctrl+w",
               onClick: async (ids, all, focused) => {
                 if (!focused) return;
