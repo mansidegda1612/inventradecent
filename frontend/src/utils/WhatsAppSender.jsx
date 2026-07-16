@@ -195,7 +195,9 @@ function WhatsAppFlowModal({ phone: initialPhone, message, pdfBlob, fileName, on
   const pollRef = useRef(null);
   const phoneInputRef = useRef(null);
   const autoRetriesRef = useRef(0);
+  const consecutiveFailuresRef = useRef(0);
   const MAX_AUTO_RETRIES = 3;
+  const MAX_CONSECUTIVE_FAILURES = 3;
 
   useEffect(() => {
     checkStatus();
@@ -209,17 +211,30 @@ function WhatsAppFlowModal({ phone: initialPhone, message, pdfBlob, fileName, on
     }
   }, [step]);
 
+  // Tries the status check up to MAX_CONSECUTIVE_FAILURES times (short gap
+  // between attempts) before giving up — a single 502 during a cold start or
+  // a mid-restart moment shouldn't immediately dead-end the popup, but it
+  // also must NOT retry forever: after a few genuine failures, stop and say
+  // so plainly instead of hammering a backend that isn't answering.
+  async function checkStatusOnce(attempt = 1) {
+    try {
+      const res = await callAPI("whatsapp/status", "GET");
+      if (!res.success) throw new Error(res.message || "WhatsApp service did not respond");
+      return res;
+    } catch (err) {
+      if (attempt >= MAX_CONSECUTIVE_FAILURES) throw err;
+      await new Promise((r) => setTimeout(r, 1200));
+      return checkStatusOnce(attempt + 1);
+    }
+  }
+
   async function checkStatus() {
     clearInterval(pollRef.current); // guard against a stale interval from a previous attempt
     autoRetriesRef.current = 0; // manual (re)check always gets a fresh budget of auto-retries
+    consecutiveFailuresRef.current = 0;
     setStep("checking");
     try {
-      const res = await callAPI("whatsapp/status", "GET");
-      if (!res.success) {
-        setBlockedMsg(res.message || "Could not check WhatsApp status");
-        setStep("blocked");
-        return;
-      }
+      const res = await checkStatusOnce();
       const data = res.data || {};
       if (data.status === "connected") {
         setStep("preview");
@@ -231,7 +246,7 @@ function WhatsAppFlowModal({ phone: initialPhone, message, pdfBlob, fileName, on
         beginConnect();
       }
     } catch (err) {
-      setBlockedMsg("Could not reach WhatsApp service: " + err.message);
+      setBlockedMsg("Could not reach WhatsApp service after a few tries: " + err.message);
       setStep("blocked");
     }
   }
@@ -244,13 +259,21 @@ function WhatsAppFlowModal({ phone: initialPhone, message, pdfBlob, fileName, on
     }
     autoRetriesRef.current += 1;
 
-    const startRes = await callAPI("whatsapp/session/start", "POST", {});
+    let startRes;
+    try {
+      startRes = await callAPI("whatsapp/session/start", "POST", {});
+    } catch (err) {
+      setBlockedMsg("Could not reach WhatsApp service: " + err.message);
+      setStep("blocked");
+      return;
+    }
     if (!startRes.success) {
       setBlockedMsg(startRes.message || "Could not start WhatsApp connection");
       setStep("blocked");
       return;
     }
     setStep("qr");
+    consecutiveFailuresRef.current = 0;
     pollRef.current = setInterval(pollStatus, POLL_INTERVAL_MS);
     pollStatus();
   }
@@ -258,12 +281,9 @@ function WhatsAppFlowModal({ phone: initialPhone, message, pdfBlob, fileName, on
   async function pollStatus() {
     try {
       const res = await callAPI("whatsapp/status", "GET");
-      if (!res.success) {
-        clearInterval(pollRef.current);
-        setBlockedMsg(res.message || "Could not check WhatsApp status");
-        setStep("blocked");
-        return;
-      }
+      if (!res.success) throw new Error(res.message || "WhatsApp service did not respond");
+
+      consecutiveFailuresRef.current = 0; // got a real response — reset the failure budget
       const data = res.data || {};
       if (data.status === "connected") {
         clearInterval(pollRef.current);
@@ -279,8 +299,16 @@ function WhatsAppFlowModal({ phone: initialPhone, message, pdfBlob, fileName, on
         clearInterval(pollRef.current);
         beginConnect();
       }
-    } catch {
-      // transient network hiccup while polling — ignore, next tick retries.
+    } catch (err) {
+      // A single dropped request during active QR polling can be transient
+      // (e.g. a cold-start blip) — but if it keeps failing, stop instead of
+      // polling a dead backend forever.
+      consecutiveFailuresRef.current += 1;
+      if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+        clearInterval(pollRef.current);
+        setBlockedMsg("WhatsApp service stopped responding: " + err.message);
+        setStep("blocked");
+      }
     }
   }
 
