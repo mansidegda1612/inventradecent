@@ -122,6 +122,30 @@ func resetToFreshDevice(reason string) {
 	setClient(newClient)
 }
 
+// ── safeGo: runs fn in its own goroutine with panic recovery. A panic inside
+//    a plain `go func(){...}` is NOT caught by recoverMiddleware (that only
+//    wraps HTTP handlers) — it crashes the ENTIRE process instead, which is
+//    what turns one bad edge case into sustained 502s until Render notices
+//    and restarts the service. Every detached goroutine in this file must go
+//    through this instead of a bare `go func(){...}`. ──────────────────────
+func safeGo(name string, fn func()) {
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				msg := fmt.Sprintf("%v", rec)
+				log.Printf("recovered from panic in background goroutine %q: %v", name, msg)
+				if strings.Contains(strings.ToLower(msg), "deleted device") {
+					resetToFreshDevice("recovered panic in " + name + ": " + msg)
+					state.set("disconnected", "", "", "WhatsApp session was invalidated — scan a new QR code to reconnect")
+				} else {
+					state.set("error", "", "", "internal error in "+name+": "+msg)
+				}
+			}
+		}()
+		fn()
+	}()
+}
+
 func main() {
 	// Load whatsmeow-service/.env into real process env vars. Unlike Node's
 	// dotenv, Go does nothing with a .env file unless we explicitly load it
@@ -185,7 +209,7 @@ func main() {
 	// on boot instead of waiting for a manual "start" call.
 	if getClient().Store.ID != nil {
 		state.set("connecting", "", "", "")
-		go func() {
+		safeGo("boot-reconnect", func() {
 			c := getClient()
 			if err := c.Connect(); err != nil {
 				log.Printf("reconnect failed: %v", err)
@@ -193,7 +217,7 @@ func main() {
 				return
 			}
 			state.set("connected", "", c.Store.ID.User, "")
-		}()
+		})
 	}
 
 	mux := http.NewServeMux()
@@ -270,13 +294,13 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 		// We have a stored session but aren't connected — just reconnect,
 		// no new QR needed.
 		state.set("connecting", "", "", "")
-		go func() {
+		safeGo("reconnect-existing-device", func() {
 			if err := c.Connect(); err != nil {
 				state.set("error", "", "", err.Error())
 				return
 			}
 			state.set("connected", "", c.Store.ID.User, "")
-		}()
+		})
 		writeJSON(w, 200, map[string]string{"status": "connecting"})
 		return
 	}
@@ -289,13 +313,13 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 
 	state.set("connecting", "", "", "")
 
-	go func() {
+	safeGo("qr-pairing-connect", func() {
 		if err := c.Connect(); err != nil {
 			state.set("error", "", "", err.Error())
 		}
-	}()
+	})
 
-	go func() {
+	safeGo("qr-channel-reader", func() {
 		for evt := range qrChan {
 			switch evt.Event {
 			case "code":
@@ -317,7 +341,7 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 				state.set("error", "", "", "pairing failed: "+evt.Event)
 			}
 		}
-	}()
+	})
 
 	writeJSON(w, 200, map[string]string{"status": "connecting"})
 }
@@ -348,7 +372,7 @@ func eventHandler(evt interface{}) {
 		// exactly like handleLogout does, or the next status/start call
 		// hits the same "invalid use of deleted device" problem.
 		log.Printf("device logged out from phone: %v", v.Reason)
-		go resetToFreshDevice("LoggedOut event from phone")
+		safeGo("reset-after-loggedout", func() { resetToFreshDevice("LoggedOut event from phone") })
 		state.set("disconnected", "", "", "unlinked from phone — scan a new QR code to reconnect")
 	}
 }
