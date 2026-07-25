@@ -291,34 +291,31 @@ export default function PurchaseEntry() {
   };
 
   // ── item management ───────────────────────────────────────────────────────
+  // NOTE: Always adds a NEW line item, even if the same product is selected
+  // again. This lets the user add the same product multiple times with
+  // different rates/amounts instead of merging quantities into one row.
   const addProduct = (product) => {
-    const exists = form.items.find((i) => i.product_id === product.id);
-    if (exists) {
-      updateItem(form.items.indexOf(exists), "qty", exists.qty + 1);
-      show(`Increased quantity for ${product.name}`, "success");
-    } else {
-      const gst = splitGST(product.gstPer || 0);
-      const newItem = {
-        product_id: product.id,
-        name: product.name,
-        qty: 1,
-        rate: product.purc_rate || 0,
-        cgst_pct: gst.cgst,
-        sgst_pct: gst.sgst,
-        taxable_amount: 0,
-        CGST: 0,
-        SGST: 0,
-      };
-      const amounts = calcItemAmounts(newItem, form.isGSTBill);
-      setForm((f) => ({
-        ...f,
-        items: [...f.items, { ...newItem, ...amounts }],
-      }));
-      show(`Added ${product.name}`, "success");
-      setTimeout(() => {
-        if (qtyFocusRef.current) qtyFocusRef.current(form.items.length); // new item index
-      }, 0);
-    }
+    const gst = splitGST(product.gstPer || 0);
+    const newItem = {
+      product_id: product.id,
+      name: product.name,
+      qty: 1,
+      rate: product.purc_rate || 0,
+      cgst_pct: gst.cgst,
+      sgst_pct: gst.sgst,
+      taxable_amount: 0,
+      CGST: 0,
+      SGST: 0,
+    };
+    const amounts = calcItemAmounts(newItem, form.isGSTBill);
+    setForm((f) => ({
+      ...f,
+      items: [...f.items, { ...newItem, ...amounts }],
+    }));
+    show(`Added ${product.name}`, "success");
+    setTimeout(() => {
+      if (qtyFocusRef.current) qtyFocusRef.current(form.items.length); // new item index
+    }, 0);
   };
 
   // ── expense management ────────────────────────────────────────────────────

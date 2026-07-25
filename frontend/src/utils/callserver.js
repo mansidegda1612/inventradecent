@@ -47,7 +47,7 @@ function forceLogout() {
   window.location.reload();
 }
 
-export async function callAPI(url, method, data = null, _isRetry = false) {
+export async function callAPI(url, method, data = null, _isRetry = false, timeout = 60000) {
   const fullUrl = `${import.meta.env.VITE_API_URL}${url}`;
   const token = localStorage.getItem("token");
 
@@ -55,7 +55,7 @@ export async function callAPI(url, method, data = null, _isRetry = false) {
   const hasBody = methodsWithBody.includes(method.toUpperCase()) && data;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 seconds
+  const timeoutId = setTimeout(() => controller.abort(), timeout); // now 60s default, overridable
 
   try {
     const res = await fetch(fullUrl, {
@@ -71,13 +71,10 @@ export async function callAPI(url, method, data = null, _isRetry = false) {
 
     clearTimeout(timeoutId);
 
-    // Access token expired mid-session — try one silent refresh, then
-    // replay the original call. Skip this dance for the auth endpoints
-    // themselves to avoid an infinite loop.
     const isAuthEndpoint = url.startsWith("auth/");
     if (res.status === 401 && !_isRetry && !isAuthEndpoint) {
       const refreshed = await refreshAccessToken();
-      if (refreshed) return callAPI(url, method, data, true);
+      if (refreshed) return callAPI(url, method, data, true, timeout);
       forceLogout();
       return { success: false, message: "Session expired" };
     }
