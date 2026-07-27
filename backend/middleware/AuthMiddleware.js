@@ -5,7 +5,7 @@ module.exports = (req, res, next) => {
   if (!token) return res.status(401).json({ success: false, message: "Access token missing" });
 
   try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET || "secret");
+    req.user = jwt.verify(token, process.env.JWT_SECRET);
     next();
   } catch {
     return res.status(401).json({ success: false, message: "Invalid or expired token" });

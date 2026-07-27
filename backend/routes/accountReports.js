@@ -23,9 +23,14 @@
 const router = require("express").Router();
 const db   = require("../config/db");
 const auth   = require("../middleware/AuthMiddleware");    // your mysql2/promise pool
+const loadContext = require("../middleware/loadContext");
+const requireActiveSubscription = require("../middleware/requireActiveSubscription");
 
 
-router.use(auth);
+const requireRight = require("../middleware/requireRight");
+router.use(auth, loadContext, requireActiveSubscription);
+// Path-scoped, not blanket — see the note in routes/dashboard.js.
+router.use("/reports/accounts", requireRight("reports.account"));
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -78,8 +83,8 @@ router.get("/reports/accounts/ledger", async (req, res) => {
               g.name AS group_name
        FROM   customer c
        LEFT JOIN \`group\` g ON g.id = c.group
-       WHERE  c.id = ?`,
-      [accountId]
+       WHERE  c.id = ? AND c.org_id = ?`,
+      [accountId, req.ctx.orgId]
     );
     if (!acc) return res.status(404).json({ error: "Account not found" });
 
@@ -90,7 +95,7 @@ router.get("/reports/accounts/ledger", async (req, res) => {
     const dateParams = from && to ? [from, to] : [];
 
     // Fetch transactions — SI/PI bills AND CR/CP vouchers, same row shape.
-    // payment_mode/ref_no/narration are NULL for SI/PI, bill_no/isgstbill
+    // payment_mode/ref_no are NULL for SI/PI, bill_no/isgstbill
     // are simply not applicable (NULL) for CR/CP — harmless either way.
     const txns = await q(
       `SELECT t.id,
@@ -98,7 +103,7 @@ router.get("/reports/accounts/ledger", async (req, res) => {
               t.cash_debit,
               t.payment_mode,
               t.ref_no,
-              t.narration,
+              t.notes,
               DATE_FORMAT(t.date, '%Y-%m-%d') AS date,
               t.bill_no,
               t.isgstbill,
@@ -108,10 +113,10 @@ router.get("/reports/accounts/ledger", async (req, res) => {
               t.final_amount,
               t.creation_date
        FROM   transaction t
-       WHERE  t.customer_id = ?
+       WHERE  t.customer_id = ? AND t.org_id = ?
          ${dateFilter}
        ORDER  BY t.date, t.id`,
-      [accountId, ...dateParams]
+      [accountId, req.ctx.orgId, ...dateParams]
     );
 
     // Compute running balance starting from opening
@@ -185,10 +190,10 @@ router.get("/reports/accounts/outstanding", async (req, res) => {
        LEFT JOIN \`group\` g ON g.id = c.group
        LEFT JOIN transaction t
               ON t.customer_id = c.id AND t.trans_type = 'SI'
-       WHERE  LOWER(g.name) LIKE '%customer%'
+       WHERE  c.org_id = ${db.escape(req.ctx.orgId)} AND LOWER(g.name) LIKE '%customer%'
        GROUP  BY c.id, c.name, c.city, c.contact_no, c.gstin, g.name,
                  c.opening, c.closing
-      HAVING closing_balance > 0 
+      HAVING closing_balance > 0
        ORDER  BY c.name`,
       [...dateParams, ...dateParams]
     );
@@ -250,10 +255,10 @@ router.get("/reports/accounts/supplier-balance", async (req, res) => {
        LEFT JOIN \`group\` g ON g.id = c.group
        LEFT JOIN transaction t
               ON t.customer_id = c.id AND t.trans_type = 'PI'
-       WHERE  LOWER(g.name) LIKE '%supplier%'
+       WHERE  c.org_id = ${db.escape(req.ctx.orgId)} AND LOWER(g.name) LIKE '%supplier%'
        GROUP  BY c.id, c.name, c.city, c.contact_no, c.gstin, g.name,
                  c.opening, c.closing
-       HAVING closing_balance < 0 
+       HAVING closing_balance < 0
        ORDER  BY c.name`,
       [...dateParams, ...dateParams]
     );
@@ -301,7 +306,8 @@ router.get("/reports/accounts/summary", async (req, res) => {
          COUNT(CASE WHEN trans_type='PI' ${dateFilter} THEN 1 END)                       AS purchase_count,
          COUNT(CASE WHEN trans_type='CR' ${dateFilter} THEN 1 END)                       AS receipt_count,
          COUNT(CASE WHEN trans_type='CP' ${dateFilter} THEN 1 END)                       AS payment_count
-       FROM transaction`,
+       FROM transaction
+       WHERE org_id = ${db.escape(req.ctx.orgId)}`,
       [
         ...dateParams, ...dateParams, ...dateParams, ...dateParams,
         ...dateParams, ...dateParams, ...dateParams, ...dateParams,

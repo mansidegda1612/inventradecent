@@ -60,6 +60,7 @@
 // Adjust this import path to wherever callAPI lives in your project (same
 // helper used everywhere else — GET/POST/PUT via fetch + Bearer token).
 import { callAPI ,resolveAssetUrl } from "../utils/callserver";
+import { expenseSequence } from "./TransactionUtils";
 
 // ── Company Config ────────────────────────────────────────────────────────────
 // DEFAULT_COMPANY is now only a FALLBACK — used if the API call fails (e.g.
@@ -550,9 +551,6 @@ function buildInvoicePageHTML(data, type, company) {
   const sgstTotal = (data.items || []).reduce((s, i) => s + parseFloat(i.SGST || 0), 0);
   const finalAmount = parseFloat(data.final_amount || 0);
 
-  const expenseLines = (data.expenses || [])
-    .filter(e => e.key !== "roundoff" && parseFloat(e.amount || 0) !== 0)
-    .map(e => ({ label: e.label || e.key, amount: parseFloat(e.amount || 0) }));
   const roundoffAmt = parseFloat(data.roundoff || 0);
 
   // ── Items rows ────────────────────────────────────────────────────────────
@@ -590,17 +588,31 @@ function buildInvoicePageHTML(data, type, company) {
   }
 
   // ── Summary right column ──────────────────────────────────────────────────
+  // Must follow the same expense sequence as the bill was calculated in, or the
+  // column stops adding up: an expense before GST joins the taxable base, one
+  // after it does not. Reading top-to-bottom then reaches the net payable.
   const summaryRows = [];
   summaryRows.push(`<div class="summary-row"><span>Taxable Amount</span><span>${fmt2(taxableTotal)}</span></div>`);
-  if (isGST) {
-    summaryRows.push(`<div class="summary-row"><span>Add: CGST</span><span>${fmt2(cgstTotal)}</span></div>`);
-    summaryRows.push(`<div class="summary-row"><span>Add: SGST</span><span>${fmt2(sgstTotal)}</span></div>`);
-  }
-  expenseLines.forEach(e => {
-    const sign = e.amount < 0 ? "" : e.amount > 0 && e.label.toLowerCase().includes("discount") ? "- " : "+ ";
-    summaryRows.push(`<div class="summary-row"><span>${escapeHtml(e.label)}</span><span>${sign}${fmt2(Math.abs(e.amount))}</span></div>`);
+
+  const sequence = expenseSequence(data.expenses || []);
+  sequence.forEach(({ exp }) => {
+    const amount = parseFloat(exp.amount || 0);
+    if (exp.key === "gst") {
+      // the GST line's own amount is printed as the CGST/SGST split instead
+      if (isGST) {
+        summaryRows.push(`<div class="summary-row"><span>Add: CGST</span><span>${fmt2(cgstTotal)}</span></div>`);
+        summaryRows.push(`<div class="summary-row"><span>Add: SGST</span><span>${fmt2(sgstTotal)}</span></div>`);
+      }
+      return;
+    }
+    if (amount === 0) return;
+    const minus = exp.sign === "(-)" || (!exp.sign && amount < 0);
+    summaryRows.push(`<div class="summary-row"><span>${escapeHtml(exp.label || exp.key)}</span><span>${minus ? "- " : "+ "}${fmt2(Math.abs(amount))}</span></div>`);
   });
-  if (roundoffAmt !== 0) {
+
+  // fallback for callers that pass roundoff separately instead of as an expense
+  const hasRoundoffLine = sequence.some(({ exp }) => exp.key === "roundoff");
+  if (!hasRoundoffLine && roundoffAmt !== 0) {
     summaryRows.push(`<div class="summary-row"><span>Round Off</span><span>${roundoffAmt > 0 ? "+" : ""}${fmt2(roundoffAmt)}</span></div>`);
   }
   summaryRows.push(`

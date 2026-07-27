@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { Card, PageHeader, DataGrid, ToastProvider } from "../components/ui/index";
+import { useRef, useState, useEffect } from "react";
+import { Card, PageHeader, DataGrid, ToastProvider, Badge } from "../components/ui/index";
 import { callAPI } from "../utils/callserver";
 import { useAuth } from "../context/AuthContext";
 import RoleFormModal from "./RoleFormModal";
@@ -36,6 +36,17 @@ export default function RoleMaster() {
 
   const handleSaved = () => fetchRoles(loadModelRef.current);
 
+  // Client-side grid (fetchRoles pulls the whole list) — load once on mount,
+  // otherwise the grid stays empty until a save triggers a refetch.
+  useEffect(() => { fetchRoles(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // System roles (admin/guest, shared across all accounts) are read-only to
+  // tenants — the backend rejects edits/deletes, so block it in the UI too.
+  const guardSystem = (focused, fn) => {
+    if (focused?.is_system) { show("Built-in roles can't be edited or deleted.", "error"); return; }
+    fn();
+  };
+
   return (
     <div>
       <PageHeader title="Role Management" sub="Define roles and the rights each one grants." />
@@ -45,6 +56,10 @@ export default function RoleMaster() {
           title=""
           columns={[
             { key: "role", label: "Role Name", render: v => <span className="u-text u-bold">{v}</span> },
+            {
+              key: "is_system", label: "Type",
+              render: v => v ? <Badge color="#6B7280">Built-in</Badge> : <Badge color="#4F46E5">Custom</Badge>,
+            },
             {
               key: "rights", label: "Rights",
               render: v => {
@@ -64,11 +79,11 @@ export default function RoleMaster() {
           footerButtons={[
             ...(hasRight("roles.edit") ? [{
               key: "edit", label: "Edit", icon: "⬇",
-              onClick: (ids, all, focused) => roleRef.current?.openEdit(focused),
+              onClick: (ids, all, focused) => guardSystem(focused, () => roleRef.current?.openEdit(focused)),
             }] : []),
             ...(hasRight("roles.delete") ? [{
               key: "del", label: "Delete", icon: "🗑", variant: "danger",
-              onClick: (ids, all, focused) => roleRef.current?.openDelete(focused),
+              onClick: (ids, all, focused) => guardSystem(focused, () => roleRef.current?.openDelete(focused)),
             }] : []),
           ]}
         />

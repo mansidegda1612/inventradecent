@@ -4,6 +4,7 @@ import { fmt, fmtNum, fmtDateShort } from "../utils/format";
 import { callAPI } from "../utils/callserver";
 import { GSTInvoicePrinter } from "../utils/GSTInvoicePrinter";
 import { sendWhatsApp } from "../utils/WhatsAppSender";
+
 import {
   Btn,
   Card,
@@ -23,6 +24,7 @@ import {
   CustomerSelection,
   ProductEntryGrid,
   TransactionSummary,
+  TransactionNotes,
   TransactionActions,
   ExpenseEntryGrid,
 } from "../components/ui/Transactioncomponents";
@@ -30,8 +32,10 @@ import {
 import {
   calcItemAmounts,
   calcTotals,
+  calcGSTFactor,
   calcExpenseFromPercentage,
   calcPercentageFromExpense,
+  getExpenseBase,
   getEmptyForm,
   DEFAULT_EXPENSES,
   splitGST,
@@ -40,6 +44,7 @@ import {
 
 import ProductFormModal from "./ProductFormModal";
 import AccountFormModal from "./AccountFormModal";
+import VoucherFormModal from "./VoucherFormModal";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
@@ -50,6 +55,9 @@ export default function SaleEntry() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const loadModelRef = useRef({});
+  const receiptRef = useRef(null);
+  const [dueOnly, setDueOnly] = useState(false);
+  const dueRef = useRef(false); // read synchronously inside fetchTransactions
 
   const [modal, setModal] = useState(false);
   const [edit, setEdit] = useState(null);
@@ -105,6 +113,7 @@ export default function SaleEntry() {
       url += `&from=${loadModel.dateFrom}`;
       url += `&to=${loadModel.dateTo}`;
       url += `&type=SI`;
+      url += dueRef.current ? `&due=1` : "";
       url += loadModel.search ? `&search=${loadModel.search}` : "";
       setLoading(true);
       const res = await callAPI(url, "GET");
@@ -122,6 +131,14 @@ export default function SaleEntry() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Toggle the "due only" filter and re-fetch. dueRef is read synchronously
+  // inside fetchTransactions (state alone wouldn't be seen by the immediate call).
+  const toggleDue = () => {
+    dueRef.current = !dueRef.current;
+    setDueOnly(dueRef.current);
+    fetchTransactions(loadModelRef.current);
   };
 
   // ── fetch lookups ─────────────────────────────────────────────────────────
@@ -143,13 +160,26 @@ export default function SaleEntry() {
       return;
     }
     const d = res.data;
-    const subtotal = d.items.reduce((s, i) => s + (i.taxable_amount || 0), 0);
-    const expenses = DEFAULT_EXPENSES.map((e) => ({ ...e }));
-    for (const item of expenses) {
-      item.amount = d[item.key];
-      item.pct = calcPercentageFromExpense(subtotal, item.amount)
-    }
     const isgstbill = d.isgstbill == 1 ? true : false
+
+    // Only the manually entered expenses are stored on the master — GST and
+    // roundoff are re-derived from the sequence below. (Of the editable ones,
+    // only `discount` actually exists as a master column; any other manual
+    // expense key must map to a real column or it loads as 0.)
+    const expenses = DEFAULT_EXPENSES.map((e) => ({
+      ...e,
+      amount: e.editable ? parseFloat(d[e.key]) || 0 : 0,
+    }));
+
+    const rawItems = (d.items ?? []).map((i) => ({
+      ...i,
+      taxable_amount: parseFloat(i.taxable_amount) || 0,
+    }));
+    // GST was charged on the post-discount base when this bill was saved, so the
+    // stored CGST/SGST must be read back against that same base — otherwise the
+    // back-derived % comes out deflated.
+    const gstFactor = isgstbill ? calcGSTFactor(rawItems, expenses) : 1;
+
     let obj = {
       cash_debit: d.cash_debit ?? "C",
       customer_name: d.customer_name ?? "",
@@ -161,36 +191,50 @@ export default function SaleEntry() {
       bill_no: d.bill_no ?? "",
       date: (d.date ?? today()).slice(0, 10),
       isGSTBill: isgstbill,
-      items: (d.items ?? []).map((i) => {
+      notes: d.notes ?? "",
+      items: rawItems.map((i) => {
         // Look up the original product to get its GST percentages
         const gst = splitGST(i?.gstPer || 0);
 
-        // If it was a GST bill, derive pct from stored amounts (as before)
-        // If non-GST bill, use master product percentages so toggling works
-        const cgst_pct = isgstbill && i.taxable_amount
-          ? (i.CGST / i.taxable_amount) * 100
+        // If it was a GST bill, derive pct from the stored amounts against the
+        // base tax was actually charged on. If non-GST bill, use master product
+        // percentages so toggling works.
+        const gstBase = i.taxable_amount * gstFactor;
+        const cgst_pct = isgstbill && gstBase
+          ? (parseFloat(i.CGST) / gstBase) * 100
           : gst.cgst;
-        const sgst_pct = isgstbill && i.taxable_amount
-          ? (i.SGST / i.taxable_amount) * 100
+        const sgst_pct = isgstbill && gstBase
+          ? (parseFloat(i.SGST) / gstBase) * 100
           : gst.sgst;
 
         const itemBase = {
           product_id: i.product_id,
           name: i.product_name ?? "",
+          hsn_code: i.hsn_code ?? "",
           qty: parseFloat(i.qty) || 1,
           rate: parseFloat(i.rate) || 0,
           cgst_pct: parseFloat(cgst_pct),
           sgst_pct: parseFloat(sgst_pct),
         };
         // Recalculate amounts based on isGSTBill flag
-        const amounts = calcItemAmounts(itemBase, isgstbill);
-        return { ...itemBase, ...amounts };
+        return { ...itemBase, ...calcItemAmounts(itemBase, isgstbill, gstFactor) };
       }),
       expenses: expenses,
       roundoff: parseFloat(d.ROUNDOFF) || 0,
       roundoff_type: "₹",
       final_amount: d.final_amount,
     };
+
+    // Resolve the sequence so every expense carries its base/amount, and show
+    // each % against the amount it is actually calculated on.
+    const totals = calcTotals(obj.items, obj.expenses, isgstbill);
+    obj.items = totals.items;
+    obj.expenses = totals.expenses.map((e) => ({
+      ...e,
+      pct: e.editable ? calcPercentageFromExpense(e.base, e.amount) : e.pct,
+    }));
+    obj.roundoff = totals.roundoff;
+
     return obj;
   }
 
@@ -258,13 +302,9 @@ export default function SaleEntry() {
     if (form.cash_debit === "D" && !form.customer_id) { show("Please select a customer!", "error"); return; }
     if (form.cash_debit === "C" && !form.customer_name_cash.trim()) { show("Please enter customer name!", "error"); return; }
 
+    // The resolved expense lines already carry the roundoff amount — no need to
+    // mutate form.expenses in place.
     const totals = calcTotals(form.items, form.expenses, form.isGSTBill);
-
-    for (const item of form.expenses) {
-      if (item.key == "roundoff") {
-        item.amount = totals.roundoff;
-      }
-    }
 
     const payload = {
       trans_type: "SI",
@@ -277,8 +317,9 @@ export default function SaleEntry() {
       roundoff: parseFloat(totals.roundoff) || 0,
       final_amount: parseFloat(totals.final),
       isGSTBill: form.isGSTBill ? 1 : 0,
-      expenses: form.expenses,
-      items: form.items.map((i) => ({
+      notes: form.notes ?? "",
+      expenses: totals.expenses,
+      items: totals.items.map((i) => ({
         product_id: i.product_id,
         qty: parseFloat(i.qty),
         rate: parseFloat(i.rate),
@@ -327,33 +368,29 @@ export default function SaleEntry() {
 
   // ── item management ───────────────────────────────────────────────────────
   const addProduct = (product) => {
-    const exists = form.items.find((i) => i.product_id === product.id);
-    if (exists) {
-      updateItem(form.items.indexOf(exists), "qty", exists.qty + 1);
-      show(`Increased quantity for ${product.name}`, "success");
-    } else {
-      const gst = splitGST(product.gstPer || 0);
-      const newItem = {
-        product_id: product.id,
-        name: product.name,
-        qty: 1,
-        rate: product.sale_rate || 0,
-        cgst_pct: gst.cgst,
-        sgst_pct: gst.sgst,
-        taxable_amount: 0,
-        CGST: 0,
-        SGST: 0,
-      };
-      const amounts = calcItemAmounts(newItem, form.isGSTBill);
-      setForm((f) => ({
-        ...f,
-        items: [...f.items, { ...newItem, ...amounts }],
-      }));
-      show(`Added ${product.name}`, "success");
-      setTimeout(() => {
-        if (qtyFocusRef.current) qtyFocusRef.current(form.items.length); // new item index
-      }, 0);
-    }
+    // Always add as a new row — the same product can appear multiple times with
+    // different rates on one bill.
+    const gst = splitGST(product.gstPer || 0);
+    const newItem = {
+      product_id: product.id,
+      name: product.name,
+      qty: 1,
+      rate: product.sale_rate || 0,
+      cgst_pct: gst.cgst,
+      sgst_pct: gst.sgst,
+      taxable_amount: 0,
+      CGST: 0,
+      SGST: 0,
+    };
+    const amounts = calcItemAmounts(newItem, form.isGSTBill);
+    setForm((f) => ({
+      ...f,
+      items: [...f.items, { ...newItem, ...amounts }],
+    }));
+    show(`Added ${product.name}`, "success");
+    setTimeout(() => {
+      if (qtyFocusRef.current) qtyFocusRef.current(form.items.length); // new item index
+    }, 0);
     if (barRef.current) barRef.current.focus();
   };
 
@@ -362,13 +399,14 @@ export default function SaleEntry() {
     setForm((f) => {
       const updated = [...f.expenses];
       const exp = { ...updated[index] };
-      const subtotal = f.items.reduce((s, i) => s + (i.taxable_amount || 0), 0);
+      // % is charged on this expense's own base in the sequence, not the subtotal
+      const base = getExpenseBase(f.items, f.expenses, index, f.isGSTBill);
       if (field === "pct") {
         exp.pct = parseFloat(value);
-        exp.amount = calcExpenseFromPercentage(subtotal, exp.pct);
+        exp.amount = calcExpenseFromPercentage(base, exp.pct);
       } else if (field === "amount") {
         exp.amount = parseFloat(value);
-        exp.pct = calcPercentageFromExpense(subtotal, exp.amount);
+        exp.pct = calcPercentageFromExpense(base, exp.amount);
       }
       updated[index] = exp;
       return { ...f, expenses: updated };
@@ -472,6 +510,15 @@ export default function SaleEntry() {
               key: "final_amount", label: "Bill Amount",
               render: (value) => <span className="u-text u-bold">{value}</span>,
             },
+            {
+              key: "outstanding", label: "Outstanding",
+              render: (value) => {
+                const n = Number(value) || 0;
+                return n > 0
+                  ? <span className="u-bold" style={{ color: "var(--red)" }}>{fmt(n)}</span>
+                  : <span className="u-hint">—</span>;
+              },
+            },
           ]}
           data={list}
           lazy={true}
@@ -483,6 +530,11 @@ export default function SaleEntry() {
               key: "Add", label: "Add Sale", icon: "+",
               variant: "primary", hotkey: "ctrl+a",
               onClick: (ids, all, focused) => open(null),
+            },
+            {
+              key: "due", label: dueOnly ? "Showing Due ✓" : "Due Only", icon: "⏳",
+              variant: dueOnly ? "primary" : "default",
+              onClick: () => toggleDue(),
             },
           ]}
           footerButtons={[
@@ -513,6 +565,14 @@ export default function SaleEntry() {
               onClick: async (ids, all, focused) => {
                 if (!focused) return;
                 await handleWhatsApp(focused);
+              },
+            },
+            {
+              key: "receipt",
+              label: "Receipt",
+              icon: "₹",
+              onClick: (ids, all, focused) => {
+                if (focused) receiptRef.current?.openForBill(focused);
               },
             },
           ]}
@@ -615,18 +675,17 @@ export default function SaleEntry() {
 
               <TransactionSummary
                 itemAmount={subtotal}
-                expenses={form.expenses}
+                expenses={totals.expenses}
                 onExpenseUpdate={updateExpense}
                 final={final}
-                roundoff={totals.roundoff}
-                gst={totals.totalGST}
+                isGSTBill={form.isGSTBill}
               />
             </div>
 
             {/* RIGHT: Scrollable Product Grid */}
             <div className="tr-right">
               <ProductEntryGrid
-                items={form.items}
+                items={totals.items}
                 onItemUpdate={updateItem}
                 onItemRemove={removeItem}
                 isGSTBill={form.isGSTBill}
@@ -634,6 +693,13 @@ export default function SaleEntry() {
               />
             </div>
           </div>
+
+          {/* ── NOTES: same field, same spot on every voucher ───────────────── */}
+          <TransactionNotes
+            value={form.notes}
+            onChange={(v) => setForm({ ...form, notes: v })}
+            placeholder="Optional note for this sale…"
+          />
 
           {/* ── FOOTER: Action Buttons ──────────────────────────────────────── */}
           <TransactionActions
@@ -654,6 +720,13 @@ export default function SaleEntry() {
 
       {/* ── product master referance ── */}
       <ProductFormModal ref={productFormRef} onSaved={handleProductSaved} />
+
+      {/* ── quick Cash/Bank Receipt against a selected sale bill ── */}
+      <VoucherFormModal
+        type="CR"
+        ref={receiptRef}
+        onSaved={() => fetchTransactions(loadModelRef.current)}
+      />
 
 
       {/* ── Toasts ── */}

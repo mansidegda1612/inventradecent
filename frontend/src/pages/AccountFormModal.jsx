@@ -18,9 +18,10 @@
 
 import { useState, useImperativeHandle, forwardRef, useRef } from "react";
 import { Btn, Modal, Field, Dropdown, ConfirmModal, ToastProvider } from "../components/ui/index";
+import GroupMaster from "./GroupMaster";
 import { callAPI } from "../utils/callserver";
 
-const AccountFormModal = forwardRef(function AccountFormModal({ onSaved, groupRef }, ref) {
+const AccountFormModal = forwardRef(function AccountFormModal({ onSaved }, ref) {
   const [modal, setModal] = useState(false);
   const [edit, setEdit] = useState(null);
   const [form, setForm] = useState({
@@ -32,16 +33,24 @@ const AccountFormModal = forwardRef(function AccountFormModal({ onSaved, groupRe
   const [toasts, setToasts] = useState({ open: false, msg: null, type: null });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const groupRef = useRef(null);  // → GroupMaster
+
 
   const show = (msg, type = "success") => {
     setToasts({ open: true, msg, type });
     setTimeout(() => setToasts({ open: false }), 3000);
   };
 
+  // The list is the org's own groups plus the shared system defaults
+  // ("customer"/"supplier"), which come back flagged is_system and sorted
+  // first. Label those so it's clear why Edit/Delete decline them.
   const fetchGroups = async () => {
     const res = await callAPI("groups", "GET");
-    if (res.success) setGroupData(res.data ?? []);
+    if (res.success) {
+      setGroupData((res.data ?? []));
+    }
   };
+
 
   // ── Expose methods to parent via ref ──────────────────────────────────────
   useImperativeHandle(ref, () => ({
@@ -221,6 +230,9 @@ const AccountFormModal = forwardRef(function AccountFormModal({ onSaved, groupRe
           </Btn>
         </div>
       </Modal>
+
+        {/* GroupMaster: invisible, manages group CRUD via ref */}
+      <GroupMaster ref={groupRef} onSaved={fetchGroups} />
 
       {/* ── Delete Confirm ── */}
       <ConfirmModal

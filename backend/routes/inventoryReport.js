@@ -16,9 +16,14 @@ const express = require("express");
 const router  = express.Router();
 const db   = require("../config/db");
 const auth   = require("../middleware/AuthMiddleware");    // your mysql2/promise pool
+const loadContext = require("../middleware/loadContext");
+const requireActiveSubscription = require("../middleware/requireActiveSubscription");
 
 
-router.use(auth);        // your mysql2/promise pool
+const requireRight = require("../middleware/requireRight");
+router.use(auth, loadContext, requireActiveSubscription);
+// Path-scoped, not blanket — see the note in routes/dashboard.js.
+router.use("/reports/inventory", requireRight("reports.inventory"));
 
 /**
  * Optional in-memory pagination.
@@ -70,8 +75,9 @@ router.get("/reports/inventory/current-stock", async (req, res) => {
         ROUND(p.c_qty * p.sale_rate, 2) AS stock_value
       FROM product p
       LEFT JOIN category c ON c.id = p.category
+      WHERE p.org_id = ?
       ORDER BY p.name
-    `);
+    `, [req.ctx.orgId]);
 
     const totalStockValue = rows.reduce((s, r) => s + Number(r.stock_value || 0), 0);
     const lowCount        = rows.filter(r => Number(r.c_qty) > 0  && Number(r.c_qty) < r.lowstockqty).length;
@@ -138,11 +144,12 @@ router.get("/reports/inventory/stock-movement", async (req, res) => {
 
       FROM product p
       LEFT JOIN category c ON c.id = p.category
-      LEFT JOIN transaction_items ti ON ti.product_id = p.id
-      LEFT JOIN \`transaction\`   t  ON t.id = ti.transaction_id
+      LEFT JOIN transaction_items ti ON ti.product_id = p.id AND ti.org_id = p.org_id
+      LEFT JOIN \`transaction\`   t  ON t.id = ti.transaction_id AND t.org_id = p.org_id
+      WHERE p.org_id = ?
       GROUP BY p.id, p.name, c.name, p.o_qty, p.c_qty
       ORDER BY p.name
-    `, [from, to, from, to, from, to, from, to]);
+    `, [from, to, from, to, from, to, from, to, req.ctx.orgId]);
 
     const { data, pagination } = paginate(rows, page, limit);
     return res.json({ rows: data, pagination });
@@ -172,9 +179,9 @@ router.get("/reports/inventory/low-stock", async (req, res) => {
         p.lowstockqty
       FROM product p
       LEFT JOIN category c ON c.id = p.category
-      WHERE p.c_qty <= p.lowstockqty
+      WHERE p.org_id = ? AND p.c_qty <= p.lowstockqty
       ORDER BY p.c_qty ASC, p.name ASC
-    `);
+    `, [req.ctx.orgId]);
 
     const lowCount = rows.filter(r => Number(r.c_qty) > 0).length;
     const outCount = rows.filter(r => Number(r.c_qty) <= 0).length;

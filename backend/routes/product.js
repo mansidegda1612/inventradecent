@@ -1,8 +1,16 @@
 const router = require("express").Router();
 const pool = require("../config/db");
 const auth = require("../middleware/AuthMiddleware");
+const loadContext = require("../middleware/loadContext");
+const requireActiveSubscription = require("../middleware/requireActiveSubscription");
+const requireRight = require("../middleware/requireRight");
+const { orgScope } = require("../utils/orgScope");
 
-// GET /api/products  — list with search, optional pagination, category filter (public)
+// Was public (no `auth`) on most routes — see the note in routes/category.js:
+// an unauthenticated request has no org to scope by.
+router.use(auth, loadContext, requireActiveSubscription);
+
+// GET /api/products  — list with search, optional pagination, category filter
 // If page & limit are NOT passed from the GUI, all matching records are returned.
 router.get("/products/", async (req, res) => {
   // #swagger.tags = ['Products']
@@ -14,8 +22,9 @@ router.get("/products/", async (req, res) => {
   const offset = usePagination ? (pageNum - 1) * limitNum : 0;
 
   try {
-    let where = "WHERE 1=1";
-    const params = [];
+    const scope = orgScope(req.ctx, "p");
+    let where = scope.where;
+    const params = [...scope.params];
     if (search) {
       where += " AND (p.name LIKE ? OR p.barcode LIKE ? OR p.hsn_code LIKE ?)";
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
@@ -63,7 +72,8 @@ router.get("/products/dropdown", async (req, res) => {
   // #swagger.tags = ['Products']
   try {
     const [rows] = await pool.query(
-      "SELECT id, name, sale_rate, purc_rate, hsn_code, barcode, c_qty FROM product ORDER BY name ASC"
+      "SELECT id, name, sale_rate, purc_rate, hsn_code, barcode, c_qty FROM product WHERE org_id=? ORDER BY name ASC",
+      [req.ctx.orgId]
     );
     res.json({ success: true, data: rows });
   } catch (e) {
@@ -71,7 +81,8 @@ router.get("/products/dropdown", async (req, res) => {
   }
 });
 
-// GET /api/products/generate-barcode  — generate a unique barcode
+// GET /api/products/generate-barcode  — generate a unique barcode (unique
+// per org — two orgs can each independently land on the same code)
 router.get("/products/generate-barcode", async (req, res) => {
   // #swagger.tags = ['Products']
   try {
@@ -84,7 +95,7 @@ router.get("/products/generate-barcode", async (req, res) => {
       const rand = Math.floor(Math.random() * 900 + 100); // 100–999
       barcode = `PRD${ts}${rand}`;
 
-      const [ex] = await pool.query("SELECT id FROM product WHERE barcode=?", [barcode]);
+      const [ex] = await pool.query("SELECT id FROM product WHERE barcode=? AND org_id=?", [barcode, req.ctx.orgId]);
       if (!ex.length) isUnique = true;
     }
 
@@ -98,7 +109,7 @@ router.get("/products/generate-barcode", async (req, res) => {
 router.get("/products/barcode/:barcode", async (req, res) => {
   // #swagger.tags = ['Products']
   try {
-    const [rows] = await pool.query("SELECT * FROM product WHERE barcode=?", [req.params.barcode]);
+    const [rows] = await pool.query("SELECT * FROM product WHERE barcode=? AND org_id=?", [req.params.barcode, req.ctx.orgId]);
     if (!rows.length) return res.status(404).json({ success: false, message: "Product not found" });
     res.json({ success: true, data: rows[0] });
   } catch (e) {
@@ -107,10 +118,10 @@ router.get("/products/barcode/:barcode", async (req, res) => {
 });
 
 // GET /api/products/low-stock  — products where c_qty <= threshold (default 5)
-router.get("/products/low-stock", auth, async (req, res) => {
+router.get("/products/low-stock", async (req, res) => {
   // #swagger.tags = ['Products']
   try {
-    const [rows] = await pool.query("SELECT * FROM product WHERE c_qty <= lowstockqty ORDER BY c_qty ASC");
+    const [rows] = await pool.query("SELECT * FROM product WHERE org_id=? AND c_qty <= lowstockqty ORDER BY c_qty ASC", [req.ctx.orgId]);
     res.json({ success: true, data: rows });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
@@ -122,8 +133,8 @@ router.get("/products/:id", async (req, res) => {
   // #swagger.tags = ['Products']
   try {
     const [rows] = await pool.query(
-      "SELECT p.*, c.name AS category_name FROM product p LEFT JOIN category c ON p.category=c.id WHERE p.id=?",
-      [req.params.id]
+      "SELECT p.*, c.name AS category_name FROM product p LEFT JOIN category c ON p.category=c.id WHERE p.id=? AND p.org_id=?",
+      [req.params.id, req.ctx.orgId]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: "Product not found" });
     res.json({ success: true, data: rows[0] });
@@ -133,20 +144,20 @@ router.get("/products/:id", async (req, res) => {
 });
 
 // POST /api/products
-router.post("/products/", auth, async (req, res) => {
+router.post("/products/", requireRight("products.create"), async (req, res) => {
   // #swagger.tags = ['Products']
   const { name, category, purc_rate, sale_rate, hsn_code, barcode, gstPer, o_qty  ,lowstockqty} = req.body;
   if (!name || !purc_rate || !sale_rate)
     return res.status(400).json({ success: false, message: "name, purc_rate and sale_rate required" });
   try {
     if (barcode) {
-      const [ex] = await pool.query("SELECT id FROM product WHERE barcode=?", [barcode]);
+      const [ex] = await pool.query("SELECT id FROM product WHERE barcode=? AND org_id=?", [barcode, req.ctx.orgId]);
       if (ex.length) return res.status(409).json({ success: false, message: "Barcode already exists" });
     }
     const qty = o_qty || 0;
     const [r] = await pool.query(
-      "INSERT INTO product (name,category,purc_rate,sale_rate,hsn_code,barcode,gstPer,o_qty,c_qty,lowstockqty) VALUES (?,?,?,?,?,?,?,?,?,?)",
-      [name, category || null, purc_rate, sale_rate, hsn_code || null, barcode || null, gstPer, qty, qty , lowstockqty]
+      "INSERT INTO product (name,category,purc_rate,sale_rate,hsn_code,barcode,gstPer,o_qty,c_qty,lowstockqty,org_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      [name, category || null, purc_rate, sale_rate, hsn_code || null, barcode || null, gstPer, qty, qty , lowstockqty, req.ctx.orgId]
     );
     res.status(201).json({ success: true, message: "Product created", data: { id: r.insertId } });
   } catch (e) {
@@ -155,7 +166,7 @@ router.post("/products/", auth, async (req, res) => {
 });
 
 // PUT /api/products/:id
-router.put("/products/:id", auth, async (req, res) => {
+router.put("/products/:id", requireRight("products.edit"), async (req, res) => {
   // #swagger.tags = ['Products']
   const { name, category, purc_rate, sale_rate, hsn_code, barcode, gstPer, o_qty  , lowstockqty} = req.body;
   if (!name || !purc_rate || !sale_rate)
@@ -163,14 +174,14 @@ router.put("/products/:id", auth, async (req, res) => {
   try {
 
     if (barcode) {
-      const [ex] = await pool.query("SELECT id FROM product WHERE barcode=? AND id!=?", [barcode, req.params.id]);
+      const [ex] = await pool.query("SELECT id FROM product WHERE barcode=? AND id!=? AND org_id=?", [barcode, req.params.id, req.ctx.orgId]);
       if (ex.length) return res.status(409).json({ success: false, message: "Barcode used by another product" });
     }
     let s_qty = 0, p_qty = 0;
     try {
       const [rows] = await pool.query(
-        "SELECT p.* FROM product p WHERE p.id=?",
-        [req.params.id]
+        "SELECT p.* FROM product p WHERE p.id=? AND p.org_id=?",
+        [req.params.id, req.ctx.orgId]
       );
       if (!rows.length)
         return res.status(404).json({ success: false, message: "Product not found" });
@@ -183,8 +194,8 @@ router.put("/products/:id", auth, async (req, res) => {
     }
     let c_qty = o_qty + p_qty - s_qty;
     const [r] = await pool.query(
-      "UPDATE product SET name=?,category=?,purc_rate=?,sale_rate=?,hsn_code=?,barcode=?,gstPer=?,o_qty=?,c_qty=?,lowstockqty=? WHERE id=?",
-      [name, category || null, purc_rate, sale_rate, hsn_code || null, barcode || null, gstPer || 0, o_qty || 0, c_qty || 0,lowstockqty ||0 , req.params.id]
+      "UPDATE product SET name=?,category=?,purc_rate=?,sale_rate=?,hsn_code=?,barcode=?,gstPer=?,o_qty=?,c_qty=?,lowstockqty=? WHERE id=? AND org_id=?",
+      [name, category || null, purc_rate, sale_rate, hsn_code || null, barcode || null, gstPer || 0, o_qty || 0, c_qty || 0,lowstockqty ||0 , req.params.id, req.ctx.orgId]
     );
     if (!r.affectedRows) return res.status(404).json({ success: false, message: "Product not found" });
     res.json({ success: true, message: "Product updated" });
@@ -194,15 +205,15 @@ router.put("/products/:id", auth, async (req, res) => {
 });
 
 // PATCH /api/products/:id  — partial update (e.g. just stock qty)
-router.patch("/products/:id", auth, async (req, res) => {
+router.patch("/products/:id", requireRight("products.edit"), async (req, res) => {
   // #swagger.tags = ['Products']
   const allowed = ["name", "category", "purc_rate", "sale_rate", "hsn_code", "barcode", "o_qty", "p_qty", "s_qty", "c_qty" , "lowstockqty"];
   const updates = Object.keys(req.body).filter(k => allowed.includes(k));
   if (!updates.length) return res.status(400).json({ success: false, message: "No valid fields" });
   try {
     const vals = updates.map(k => req.body[k]);
-    vals.push(req.params.id);
-    await pool.query(`UPDATE product SET ${updates.map(k => `${k}=?`).join(",")} WHERE id=?`, vals);
+    vals.push(req.params.id, req.ctx.orgId);
+    await pool.query(`UPDATE product SET ${updates.map(k => `${k}=?`).join(",")} WHERE id=? AND org_id=?`, vals);
     res.json({ success: true, message: "Product updated" });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
@@ -210,10 +221,10 @@ router.patch("/products/:id", auth, async (req, res) => {
 });
 
 // DELETE /api/products/:id
-router.delete("/products/:id", auth, async (req, res) => {
+router.delete("/products/:id", requireRight("products.delete"), async (req, res) => {
   // #swagger.tags = ['Products']
   try {
-    const [r] = await pool.query("DELETE FROM product WHERE id=?", [req.params.id]);
+    const [r] = await pool.query("DELETE FROM product WHERE id=? AND org_id=?", [req.params.id, req.ctx.orgId]);
     if (!r.affectedRows) return res.status(404).json({ success: false, message: "Product not found" });
     res.json({ success: true, message: "Product deleted" });
   } catch (e) {

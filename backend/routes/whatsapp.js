@@ -25,11 +25,18 @@ const router = require("express").Router();
 const http   = require("http");
 const { URL } = require("url");
 const auth   = require("../middleware/AuthMiddleware");
+const requireActiveSubscription = require("../middleware/requireActiveSubscription");
+const { requireFeature } = require("../middleware/requireFeature");
 
 const WA_SERVICE_URL  = process.env.WA_SERVICE_URL  || "http://localhost:8081";
 const WA_INTERNAL_KEY = process.env.WA_INTERNAL_KEY || "change-me-internal-key";
 
-router.use(auth); // every route below requires a valid JWT, same as transaction.js
+// Every route below requires a valid JWT, an active subscription (or a
+// trial/comped account, which counts as unrestricted — see
+// requireActiveSubscription.js), and a plan that includes the "whatsapp"
+// feature. A Starter account gets 402 UPGRADE_REQUIRED and never reaches
+// the Go service.
+router.use(auth, requireActiveSubscription, requireFeature("whatsapp"));
 
 // Only admins (userrole 1, matching Sidebar.jsx's roles:[1] convention) may
 // start/stop the WhatsApp session — sending messages is open to any logged-in

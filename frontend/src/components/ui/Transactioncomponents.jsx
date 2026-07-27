@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { fmt, fmtDateShort, fmtNum } from "../../utils/format";
 import { C } from "../../utils/theme";
 import { Btn, Field, Dropdown, TableWrap } from "./index";
+import { expenseSequence } from "../../utils/TransactionUtils";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TRANSACTION HEADER
@@ -567,9 +568,9 @@ export function ExpenseEntryGrid({ expenses, onExpenseUpdate }) {
       </div>
       <table className="tr-expense-table-v2">
         <tbody>
-          {expenses
-            .filter(item => item.editable)// render editable  expenses only
-            .map((exp, idx) => (
+          {expenseSequence(expenses)
+            .filter(({ exp }) => exp.editable)// render editable  expenses only
+            .map(({ exp, index }) => (
               <tr key={exp.key}>
                 <td className="tr-exp-name">{exp.label}</td>
                 <td className="tr-exp-sign">{exp.sign}</td>
@@ -579,10 +580,7 @@ export function ExpenseEntryGrid({ expenses, onExpenseUpdate }) {
                       type="number"
                       className="tr-exp-input"
                       value={exp.pct}
-                      onChange={(e) => onExpenseUpdate(
-                        expenses.findIndex(e2 => e2.key === exp.key),
-                        "pct", e.target.value
-                      )}
+                      onChange={(e) => onExpenseUpdate(index, "pct", e.target.value)}
                     />
                     <span className="tr-exp-unit">%</span>
                   </div>
@@ -592,11 +590,7 @@ export function ExpenseEntryGrid({ expenses, onExpenseUpdate }) {
                     type="number"
                     className="tr-exp-input"
                     value={exp.amount}
-                    onChange={(e) => onExpenseUpdate(
-                      expenses.findIndex(e2 => e2.key === exp.key),
-                      "amount", e.target.value
-                    )}
-
+                    onChange={(e) => onExpenseUpdate(index, "amount", e.target.value)}
                   />
                 </td>
               </tr>
@@ -611,7 +605,10 @@ export function ExpenseEntryGrid({ expenses, onExpenseUpdate }) {
 // TRANSACTION SUMMARY
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function TransactionSummary({ itemAmount, expenses, final, roundoff, gst }) {
+// Renders every expense in seq order, each with the base it is calculated on —
+// that "on 315" hint is what makes the sequence visible to the user. Needs the
+// RESOLVED expenses (calcTotals(...).expenses), not the raw form ones.
+export function TransactionSummary({ itemAmount, expenses, final, isGSTBill = true }) {
   return (
     <div className="tr-summary-card">
       <div className="tr-section-title">Bill Summary</div>
@@ -621,30 +618,25 @@ export function TransactionSummary({ itemAmount, expenses, final, roundoff, gst 
         <span className="tr-summary-row-value tr-amount">{fmt(itemAmount)}</span>
       </div>
 
-      {expenses
-        .filter(exp => exp.editable)
-        .map((exp) => (
+      {expenseSequence(expenses).map(({ exp }) => {
+        if (exp.key === "gst" && !isGSTBill) return null;
+        const amount = parseFloat(exp.amount) || 0;
+        // RoundOff has sign: "" — its direction comes from the amount itself
+        const minus = exp.sign === "(-)" || (!exp.sign && amount < 0);
+        return (
           <div className="tr-summary-row" key={exp.key}>
-            <span className="tr-summary-row-label">{exp.label}</span>
-            <span className={`tr-summary-row-value tr-amount ${exp.sign === "+" ? "plus" : "minus"}`}>
-              {exp.sign} {fmt(exp.amount || 0)}
+            <span className="tr-summary-row-label">
+              {exp.label}
+              {exp.base != null && (
+                <span className="tr-hint-text u-fs11"> on {fmt(exp.base)}</span>
+              )}
+            </span>
+            <span className={`tr-summary-row-value tr-amount ${minus ? "minus" : "plus"}`}>
+              {minus ? "(−)" : "(+)"} {fmt(Math.abs(amount))}
             </span>
           </div>
-        ))}
-
-      <div className="tr-summary-row">
-        <span className="tr-summary-row-label">Total GST</span>
-        <span className={`tr-summary-row-value tr-amount plus`}>
-          {"(+)"} {fmt(gst || 0)}
-        </span>
-      </div>
-
-      <div className="tr-summary-row">
-        <span className="tr-summary-row-label">Round Off</span>
-        <span className={`tr-summary-row-value tr-amount ${roundoff >= 0 ? "plus" : "minus"}`}>
-          {roundoff >= 0 ? "(+)" : "(−)"} {fmt(Math.abs(roundoff))}
-        </span>
-      </div>
+        );
+      })}
 
       <div className="tr-summary-divider" />
 
@@ -655,6 +647,40 @@ export function TransactionSummary({ itemAmount, expenses, final, roundoff, gst 
     </div>
   );
 }
+// ─────────────────────────────────────────────────────────────────────────────
+// TRANSACTION NOTES
+// One free-text note field, shared by EVERY entry screen (Sale, Purchase,
+// Cash/Bank Receipt, Cash/Bank Payment) so the note sits in the same place and
+// looks the same everywhere. Replaces the old single-line "Narration" input
+// that only the Cash/Bank voucher header had.
+// Rendered as a full-width strip directly above the Save/Cancel footer.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function TransactionNotes({
+  value,
+  onChange,
+  maxLength = 500,
+  placeholder = "Optional note for this entry…",
+}) {
+  const text = value ?? "";
+  return (
+    <div className="tr-notes">
+      <div className="tr-notes-labelrow">
+        <span className="tr-notes-label">📝 Notes</span>
+        <span className="tr-notes-count">{text.length}/{maxLength}</span>
+      </div>
+      <textarea
+        className="tr-notes-input"
+        value={text}
+        onChange={(e) => onChange(e.target.value)}
+        maxLength={maxLength}
+        rows={2}
+        placeholder={placeholder}
+      />
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TRANSACTION ACTIONS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -723,8 +749,6 @@ export function VoucherHeader({
   customerId,
   customers = [],
   onCustomerChange,
-  narration,
-  onNarrationChange,
   accountFormRef,
 }) {
   const partyLabel = type === "CR" ? "Received From (Customer)" : "Paid To (Supplier)";
@@ -831,20 +855,8 @@ export function VoucherHeader({
         </div>
       </div>
 
-      <div className="tr-vdivider" />
-
-      {/* Narration */}
-      <div className="tr-header-segment u-flex-1">
-        <div className="u-w-full">
-          <div className="tr-section-title">Narration</div>
-          <input
-            className="tr-barcode-input u-w-full"
-            value={narration}
-            onChange={(e) => onNarrationChange(e.target.value)}
-            placeholder="Optional note…"
-          />
-        </div>
-      </div>
+      {/* The note lives in the shared <TransactionNotes /> strip above the
+          footer now — same position on every voucher — not in this header. */}
     </div>
   );
 }

@@ -1,12 +1,16 @@
 const router = require("express").Router();
 const pool = require("../config/db");
 const auth = require("../middleware/AuthMiddleware");
+const loadContext = require("../middleware/loadContext");
+const requireActiveSubscription = require("../middleware/requireActiveSubscription");
+const requireRight = require("../middleware/requireRight");
+const { orgScope } = require("../utils/orgScope");
 
-router.use(auth);
+router.use(auth, loadContext, requireActiveSubscription);
 
 // GET /api/customers  — with search, optional pagination, group filter
 // If page & limit are NOT passed from the GUI, all matching records are returned.
-router.get("/customers/", async (req, res) => {
+router.get("/customers/", requireRight("accounts.view"), async (req, res) => {
   // #swagger.tags = ['Customers']
   const { page, limit, search = "", group = "" } = req.query;
 
@@ -17,8 +21,9 @@ router.get("/customers/", async (req, res) => {
   const offset = usePagination ? (pageNum - 1) * limitNum : 0;
 
   try {
-    let where = "WHERE 1=1";
-    const params = [];
+    const scope = orgScope(req.ctx, "c");
+    let where = scope.where;
+    const params = [...scope.params];
 
     if (search) {
       where += " AND (c.name LIKE ? OR c.contact_no LIKE ? OR c.city LIKE ? OR c.gstin LIKE ?)";
@@ -66,7 +71,10 @@ router.get("/customers/", async (req, res) => {
 router.get("/customers/dropdown", async (req, res) => {
   // #swagger.tags = ['Customers']
   try {
-    const [rows] = await pool.query("SELECT id, name, contact_no, gstin FROM customer ORDER BY name ASC");
+    const [rows] = await pool.query(
+      "SELECT id, name, contact_no, gstin FROM customer WHERE org_id=? ORDER BY name ASC",
+      [req.ctx.orgId]
+    );
     res.json({ success: true, data: rows });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
@@ -78,8 +86,8 @@ router.get("/customers/:id", async (req, res) => {
   // #swagger.tags = ['Customers']
   try {
     const [rows] = await pool.query(
-      "SELECT c.*, g.name AS group_name FROM customer c LEFT JOIN `group` g ON c.group=g.id WHERE c.id=?",
-      [req.params.id]
+      "SELECT c.*, g.name AS group_name FROM customer c LEFT JOIN `group` g ON c.group=g.id WHERE c.id=? AND c.org_id=?",
+      [req.params.id, req.ctx.orgId]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: "Customer not found" });
     res.json({ success: true, data: rows[0] });
@@ -93,8 +101,8 @@ router.get("/customers/:id/ledger", async (req, res) => {
   // #swagger.tags = ['Customers']
   const { from, to } = req.query;
   try {
-    let where = "WHERE t.customer_id=?";
-    const params = [req.params.id];
+    let where = "WHERE t.customer_id=? AND t.org_id=?";
+    const params = [req.params.id, req.ctx.orgId];
     if (from) { where += " AND DATE(t.date)>=?"; params.push(from); }
     if (to) { where += " AND DATE(t.date)<=?"; params.push(to); }
 
@@ -111,14 +119,14 @@ router.get("/customers/:id/ledger", async (req, res) => {
 });
 
 // POST /api/customers
-router.post("/customers/", async (req, res) => {
+router.post("/customers/", requireRight("accounts.create"), async (req, res) => {
   // #swagger.tags = ['Customers']
   const { name, contact_no, city, gstin, group, address, opening } = req.body;
   if (!name) return res.status(400).json({ success: false, message: "name is required" });
   try {
     const [r] = await pool.query(
-      "INSERT INTO customer (name,contact_no,city,gstin,`group`,address,opening,closing) VALUES (?,?,?,?,?,?,?,?)",
-      [name, contact_no || null, city || null, gstin || null, group || null, address || null, opening || 0, opening || 0]
+      "INSERT INTO customer (name,contact_no,city,gstin,`group`,address,opening,closing,org_id) VALUES (?,?,?,?,?,?,?,?,?)",
+      [name, contact_no || null, city || null, gstin || null, group || null, address || null, opening || 0, opening || 0, req.ctx.orgId]
     );
     res.status(201).json({ success: true, message: "Customer created", data: { id: r.insertId } });
   } catch (e) {
@@ -127,14 +135,14 @@ router.post("/customers/", async (req, res) => {
 });
 
 // PUT /api/customers/:id
-router.put("/customers/:id", async (req, res) => {
+router.put("/customers/:id", requireRight("accounts.edit"), async (req, res) => {
   // #swagger.tags = ['Customers']
   const { name, contact_no, city, gstin, group, address, opening } = req.body;
   let credit = 0, debit = 0;
   try {
     const [rows] = await pool.query(
-      "SELECT c.* FROM customer c WHERE c.id=?",
-      [req.params.id]
+      "SELECT c.* FROM customer c WHERE c.id=? AND c.org_id=?",
+      [req.params.id, req.ctx.orgId]
     );
     if (!rows.length)
       return res.status(404).json({ success: false, message: "Customer not found" });
@@ -149,8 +157,8 @@ router.put("/customers/:id", async (req, res) => {
   if (!name) return res.status(400).json({ success: false, message: "name is required" });
   try {
     const [r] = await pool.query(
-      "UPDATE customer SET name=?,contact_no=?,city=?,gstin=?,`group`=?,address=?,opening=?,closing=? WHERE id=?",
-      [name, contact_no || null, city || null, gstin || null, group || null, address || null, opening || 0, closing || 0, req.params.id]
+      "UPDATE customer SET name=?,contact_no=?,city=?,gstin=?,`group`=?,address=?,opening=?,closing=? WHERE id=? AND org_id=?",
+      [name, contact_no || null, city || null, gstin || null, group || null, address || null, opening || 0, closing || 0, req.params.id, req.ctx.orgId]
     );
     if (!r.affectedRows) return res.status(404).json({ success: false, message: "Customer not found" });
     res.json({ success: true, message: "Customer updated" });
@@ -160,10 +168,10 @@ router.put("/customers/:id", async (req, res) => {
 });
 
 // DELETE /api/customers/:id
-router.delete("/customers/:id", async (req, res) => {
+router.delete("/customers/:id", requireRight("accounts.delete"), async (req, res) => {
   // #swagger.tags = ['Customers']
   try {
-    const [r] = await pool.query("DELETE FROM customer WHERE id=?", [req.params.id]);
+    const [r] = await pool.query("DELETE FROM customer WHERE id=? AND org_id=?", [req.params.id, req.ctx.orgId]);
     if (!r.affectedRows) return res.status(404).json({ success: false, message: "Customer not found" });
     res.json({ success: true, message: "Customer deleted" });
   } catch (e) {

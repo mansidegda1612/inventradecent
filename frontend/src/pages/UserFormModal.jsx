@@ -1,11 +1,14 @@
 import { useState, useImperativeHandle, forwardRef } from "react";
 import { Btn, Modal, Field, Dropdown, ConfirmModal, ToastProvider } from "../components/ui/index";
-import PermissionMatrix from "../components/ui/PermissionMatrix";
+import RightsEditor from "../components/ui/RightsEditor";
+import { allPermissionIds, idsToLabels } from "../utils/permissions";
 import { callAPI } from "../utils/callserver";
+import { useAuth } from "../context/AuthContext";
 
 const emptyForm = { name: "", user_id: "", password: "", userrole: null, rights: [], is_active: true };
 
 const UserFormModal = forwardRef(function UserFormModal({ onSaved }, ref) {
+  const { permissions } = useAuth();
   const [modal, setModal] = useState(false);
   const [edit, setEdit] = useState(null);
   const [form, setForm] = useState(emptyForm);
@@ -127,6 +130,15 @@ const UserFormModal = forwardRef(function UserFormModal({ onSaved }, ref) {
     }
   };
 
+  // The role grants a base set of rights; the admin can add extra ones on top.
+  // Show the role's own rights as read-only chips and lock them in the editor
+  // so they read as "already granted" and only the extras are toggleable.
+  const roleIsWildcard = roleRightsPreview.includes("*");
+  const lockedIds = roleIsWildcard
+    ? allPermissionIds(permissions)
+    : roleRightsPreview.filter((x) => typeof x === "number");
+  const roleLabels = idsToLabels(permissions, lockedIds);
+
   return (
     <>
       <Modal open={modal} onClose={() => setModal(false)} title={edit ? "Edit User" : "Add User"} width={700}>
@@ -166,18 +178,22 @@ const UserFormModal = forwardRef(function UserFormModal({ onSaved }, ref) {
           </Field>
         </div>
 
-        <Field label="Role's default rights (read-only reference)">
-          <div className="perm-preview">
-            {roleRightsPreview.includes("*")
-              ? <span className="u-accent u-bold">All rights</span>
-              : roleRightsPreview.length
-                ? <span className="u-muted u-fs12">{roleRightsPreview.join(", ")}</span>
+        <Field label="Role's default rights (granted automatically)">
+          <div className="rights-role-preview">
+            {roleIsWildcard
+              ? <span className="rights-chip is-on">✓ Full access (all modules)</span>
+              : roleLabels.length
+                ? roleLabels.map(r => <span key={r.id} className="rights-chip is-on is-locked">{r.label}</span>)
                 : <span className="u-hint">No rights on this role yet</span>}
           </div>
         </Field>
 
-        <Field label="Extra rights for this user (in addition to the role above)">
-          <PermissionMatrix value={form.rights} onChange={(rights) => setForm({ ...form, rights })} />
+        <Field label="Extra rights for this user (on top of the role)">
+          <RightsEditor
+            value={form.rights}
+            onChange={(rights) => setForm({ ...form, rights })}
+            lockedIds={lockedIds}
+          />
         </Field>
 
         <div className="u-modal-footer-actions">

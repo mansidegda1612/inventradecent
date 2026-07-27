@@ -1,0 +1,185 @@
+/* ============================================================================
+   PLATFORM.CSS — the SaaS owner's console (pages/platform/*)
+
+   Kept in its own file, and every class prefixed `pf-`, because this shell has
+   no overlap with the tenant app: it renders instead of .app-shell, never
+   alongside it. Colours come from the same --accent/--border/--text variables
+   the rest of the UI mirrors out of utils/theme.js, so nothing new is invented
+   here — but the topbar is deliberately dark, as a standing visual reminder
+   that you're looking at every customer's data, not one company's.
+   ============================================================================ */
+
+.pf-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: #F4F6FA;
+}
+
+/* ── Topbar ─────────────────────────────────────────────────────────────── */
+.pf-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 28px;
+  background: #111827;
+  border-bottom: 1px solid #1F2937;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  flex-shrink: 0;
+}
+
+.pf-brand {
+  font-size: 17px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -.01em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.pf-brand-highlight { color: var(--accent); }
+
+.pf-brand-tag {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 5px;
+  padding: 3px 8px;
+}
+
+.pf-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.pf-topbar-user {
+  font-size: 13px;
+  font-weight: 600;
+  color: #D1D5DB;
+  white-space: nowrap;
+}
+
+/* Ghost buttons default to a light-background border/text pair, which is
+   invisible on the dark topbar. */
+.pf-topbar-right .ui-btn-ghost {
+  color: #D1D5DB;
+  border-color: #374151;
+}
+.pf-topbar-right .ui-btn-ghost:hover {
+  color: #fff;
+  border-color: #6B7280;
+}
+
+/* ── Page body ──────────────────────────────────────────────────────────── */
+.pf-main {
+  flex: 1;
+  padding: 28px 32px;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+/* ── Summary tiles ──────────────────────────────────────────────────────── */
+.pf-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+/* ── Modal form bits ────────────────────────────────────────────────────── */
+.pf-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.pf-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--sub);
+  margin: 4px 0 10px;
+  cursor: pointer;
+}
+.pf-check input { width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent); }
+
+/* Segmented Paid / Trial switch */
+.pf-toggle {
+  display: inline-flex;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: 9px;
+  padding: 3px;
+  gap: 3px;
+  margin-bottom: 14px;
+}
+.pf-toggle-btn {
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 6px 18px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.pf-toggle-btn-active {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--accent) 27%, transparent);
+}
+
+.pf-note { margin: -6px 0 10px; line-height: 1.5; }
+.pf-err  { margin-top: 12px; }
+
+/* Plain-language read-back of what's about to be written — the last check
+   before a subscription date goes in by hand. */
+.pf-summary {
+  background: var(--accentBg);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  border-radius: 9px;
+  padding: 10px 14px;
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--sub);
+}
+
+.pf-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .pf-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 768px) {
+  .pf-topbar { padding: 10px 16px; }
+  .pf-main   { padding: 18px 14px; }
+  .pf-topbar-user { display: none; }
+  .pf-form-row { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 480px) {
+  .pf-stats { grid-template-columns: 1fr; }
+  .pf-toggle { width: 100%; }
+  .pf-toggle-btn { flex: 1; }
+}

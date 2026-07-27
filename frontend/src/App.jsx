@@ -1,14 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 window.XLSX = XLSX; // make it available to DataGrid
 import "./style/global.css";
 import "./style/responsive.css";
+import "./style/platform.css";
 // import "./style/transaction.css";
 
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { setUpgradeRequiredHandler } from "./utils/callserver";
+import { Modal, Btn } from "./components/ui";
 
 // Layout
 import Sidebar from "./components/layout/Sidebar";
+import Header from "./components/layout/Header";
 
 // Pages
 import Login from "./pages/Login";
@@ -26,23 +30,9 @@ import SaleEntry from "./pages/SaleEntry";
 import InventoryReports from "./pages/InventoryReports";
 import AccountReports from "./pages/AccountReports";
 import FinancialReports from "./pages/FinancialReports";
-
-const PAGE_LABELS = {
-  dashboard: "Dashboard",
-  users: "User Management",
-  roles: "Role Management",
-  company: "Company Settings",
-  accounts: "Account Master",
-  products: "Product Master",
-  barcode: "Barcode Generator",
-  purchase: "Purchase Entry",
-  "cash-receipt": "Cash/Bank Receipt",
-  "cash-payment": "Cash/Bank Payment",
-  sale: "Sale Entry",
-  "inv-reports": "Inventory Reports",
-  "acc-reports": "Account Reports",
-  "fin-reports": "Financial Reports",
-};
+import Plans from "./pages/Plans";
+import AccountSettings from "./pages/AccountSettings";
+import PlatformConsole from "./pages/platform/PlatformConsole";
 
 // Right required to view each page — used both to guard direct navigation
 // (e.g. a stale sessionStorage value pointing at a page the role lost
@@ -64,26 +54,49 @@ const PAGE_RIGHTS = {
   "fin-reports": "reports.financial",
 };
 
-function HamburgerIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-      <line x1="3" y1="6" x2="21" y2="6" />
-      <line x1="3" y1="12" x2="21" y2="12" />
-      <line x1="3" y1="18" x2="21" y2="18" />
-    </svg>
-  );
+// Trial countdown lives in the header now (next to the account menu) since
+// it's informational, not blocking — this banner is reserved for the
+// actually-blocked states, which deserve the full-width warning.
+function SubscriptionBanner({ subscription, isPlatformAdmin }) {
+  if (!subscription || isPlatformAdmin) return null;
+
+  if (["expired", "past_due", "canceled"].includes(subscription.status)) {
+    return (
+      <div className="sub-banner sub-banner-expired">
+        Your trial has ended. You can still view your existing data, but creating or editing anything is blocked until you upgrade.
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function AppShell() {
-  const { user, ready, hasRight, logout } = useAuth();
+  const { user, ready, hasRight, subscription } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [page, setPageState] = useState(() => sessionStorage.getItem("currentPage") || "dashboard");
+  const [upgradeInfo, setUpgradeInfo] = useState(null);
+
+  // Any API call anywhere in the app that comes back 402 UPGRADE_REQUIRED /
+  // USER_LIMIT_REACHED / SUBSCRIPTION_INACTIVE pops this same dialog,
+  // instead of each form having to know about billing.
+  useEffect(() => {
+    setUpgradeRequiredHandler((info) => setUpgradeInfo(info));
+    return () => setUpgradeRequiredHandler(null);
+  }, []);
 
   // Still hydrating auth/me on load — avoid a login-screen flash for users
   // with a valid token already in localStorage.
   if (!ready) return null;
 
   if (!user) return <Login />;
+
+  // The SaaS owner gets a different app off the same login form. Returning here
+  // means the tenant Sidebar/Header/SubscriptionBanner never mount, so there's
+  // no customer-facing menu to hide (or to leak by forgetting to hide it) — and
+  // no tenant page is reachable, since a console session carries rights: [] and
+  // no org for the server to scope anything to.
+  if (user.padmin) return <PlatformConsole />;
 
   function renderPage(page) {
     // Server is still the real gate (every mutating route re-checks via
@@ -109,6 +122,8 @@ function AppShell() {
       case "inv-reports": return <InventoryReports />;
       case "acc-reports": return <AccountReports />;
       case "fin-reports": return <FinancialReports />;
+      case "plans": return <Plans />;
+      case "account": return <AccountSettings setPage={setPage} />;
       default: return <p className="app-notfound">Page not found.</p>;
     }
   }
@@ -118,37 +133,37 @@ function AppShell() {
     setPageState(p);
   };
 
-  const handleLogout = () => {
-    logout();
-    setPageState("dashboard");
-    setMobileOpen(false);
-  };
-
   return (
     <>
-      <div className="mobile-topbar">
-        <button className="hamburger" onClick={() => setMobileOpen(true)}>
-          <HamburgerIcon />
-        </button>
-        <span className="mobile-topbar-title">
-          <span>Inventra</span>Decent
-        </span>
-        <span className="app-role-label">{PAGE_LABELS[page] || ""}</span>
-      </div>
+      <SubscriptionBanner subscription={subscription} isPlatformAdmin={user?.padmin} />
 
       <div className="app-shell">
         <Sidebar
           page={page}
           setPage={setPage}
-          onLogout={handleLogout}
           mobileOpen={mobileOpen}
           setMobileOpen={setMobileOpen}
         />
 
-        <main className="main-content">
-          {renderPage(page)}
-        </main>
+        <div className="main-content-wrap">
+          <Header
+            setPage={setPage}
+            mobileOpen={mobileOpen}
+            setMobileOpen={setMobileOpen}
+          />
+          <main className="main-content">
+            {renderPage(page)}
+          </main>
+        </div>
       </div>
+
+      <Modal open={!!upgradeInfo} onClose={() => setUpgradeInfo(null)} title="Upgrade required" width={420}>
+        <p>{upgradeInfo?.message}</p>
+        <div className="upgrade-modal-actions">
+          <Btn onClick={() => { setPage("plans"); setUpgradeInfo(null); }}>View Plans</Btn>
+          <Btn variant="ghost" onClick={() => setUpgradeInfo(null)}>Close</Btn>
+        </div>
+      </Modal>
     </>
   );
 }

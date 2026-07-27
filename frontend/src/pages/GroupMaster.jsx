@@ -26,9 +26,19 @@ const GroupMaster = forwardRef(function GroupMaster({ onSaved }, ref) {
     setModal(true);
   };
 
+  // System default groups ("customer"/"supplier", org_id IS NULL — shared by
+  // every tenant) are read-only: the backend answers 403, so stop it here too
+  // rather than opening a modal that can only fail.
+  const isSystem = (row) => {
+    if (!row?.is_system) return false;
+    show(`"${row.name}" is a system default group — it can't be edited or deleted.`, "error");
+    return true;
+  };
+
   // ── OPEN EDIT ─────────────────────────────────────────────────────────────
   const openEdit = (row) => {
     if (!row) { show("Select a group to edit", "error"); return; }
+    if (isSystem(row)) return;
     setForm({ name: row.name || "" });
     setEdit(row.id);
     setModal(true);
@@ -37,6 +47,7 @@ const GroupMaster = forwardRef(function GroupMaster({ onSaved }, ref) {
   // ── OPEN DELETE ───────────────────────────────────────────────────────────
   const openDelete = (row) => {
     if (!row) { show("Select a group to delete", "error"); return; }
+    if (isSystem(row)) return;
     focusedDataRef.current = row;
     setConfirmOpen(true);
   };

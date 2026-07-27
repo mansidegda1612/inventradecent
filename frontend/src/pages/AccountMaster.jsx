@@ -13,7 +13,6 @@ import { useState, useRef } from "react";
 import { C } from "../utils/theme";
 import { Btn, Card, PageHeader, DataGrid, ToastProvider, ConfirmModal, BalancePill } from "../components/ui/index";
 import { callAPI } from "../utils/callserver";
-import GroupMaster from "./GroupMaster";
 import AccountFormModal from "./AccountFormModal";
 
 export default function AccountMaster() {
@@ -24,7 +23,6 @@ export default function AccountMaster() {
 
   const loadModelRef = useRef({});
   const accountRef = useRef(null);  // → AccountFormModal
-  const groupRef = useRef(null);  // → GroupMaster
 
   const show = (msg, type = "success") => {
     setToasts({ open: true, msg, type });
@@ -55,13 +53,6 @@ export default function AccountMaster() {
 
   // ── Called by AccountFormModal after any save/delete ──────────────────────
   const handleAccountSaved = async () => {
-    await fetchAccounts(loadModelRef.current);
-  };
-
-  // ── Called by GroupMaster after group changes (refreshes group dropdown) ──
-  const handleGroupSaved = async () => {
-    // AccountFormModal re-fetches groups when it opens, so nothing extra needed here.
-    // But if you have a group column in the grid you may want to refresh:
     await fetchAccounts(loadModelRef.current);
   };
 
@@ -123,11 +114,8 @@ export default function AccountMaster() {
       <AccountFormModal
         ref={accountRef}
         onSaved={handleAccountSaved}
-        groupRef={groupRef}   // pass down so the dropdown footer buttons work
       />
 
-      {/* GroupMaster: invisible, manages group CRUD via ref */}
-      <GroupMaster ref={groupRef} onSaved={handleGroupSaved} />
 
       <ToastProvider open={toasts.open} msg={toasts.msg} type={toasts.type} />
     </div>

@@ -47,7 +47,24 @@ function forceLogout() {
   window.location.reload();
 }
 
-export async function callAPI(url, method, data = null, _isRetry = false) {
+// Any response carrying one of these codes means "this account needs to
+// upgrade to do that" — surfaced centrally here (rather than each caller
+// having to know about billing) so every screen gets the same upgrade
+// dialog instead of whatever generic error text that form happens to show.
+const UPGRADE_CODES = new Set(["UPGRADE_REQUIRED", "USER_LIMIT_REACHED", "ORG_LIMIT_REACHED", "SUBSCRIPTION_INACTIVE"]);
+let upgradeRequiredHandler = null;
+export function setUpgradeRequiredHandler(fn) {
+  upgradeRequiredHandler = fn;
+}
+// Exported so call sites that can't go through callAPI (e.g. WhatsAppSender's
+// raw fetch() for multipart uploads) can still trigger the same dialog.
+export function notifyUpgradeRequired(parsed) {
+  if (parsed?.code && UPGRADE_CODES.has(parsed.code) && upgradeRequiredHandler) {
+    upgradeRequiredHandler(parsed);
+  }
+}
+
+export async function callAPI(url, method, data = null, _isRetry = false, timeout = 60000) {
   const fullUrl = `${import.meta.env.VITE_API_URL}${url}`;
   const token = localStorage.getItem("token");
 
@@ -55,7 +72,7 @@ export async function callAPI(url, method, data = null, _isRetry = false) {
   const hasBody = methodsWithBody.includes(method.toUpperCase()) && data;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 seconds
+  const timeoutId = setTimeout(() => controller.abort(), timeout); // default 60 seconds
 
   try {
     const res = await fetch(fullUrl, {
@@ -77,18 +94,22 @@ export async function callAPI(url, method, data = null, _isRetry = false) {
     const isAuthEndpoint = url.startsWith("auth/");
     if (res.status === 401 && !_isRetry && !isAuthEndpoint) {
       const refreshed = await refreshAccessToken();
-      if (refreshed) return callAPI(url, method, data, true);
+      if (refreshed) return callAPI(url, method, data, true, timeout);
       forceLogout();
       return { success: false, message: "Session expired" };
     }
 
     const text = await res.text();
 
+    let parsed;
     try {
-      return JSON.parse(text);
+      parsed = JSON.parse(text);
     } catch {
       return text;
     }
+
+    if (res.status === 402) notifyUpgradeRequired(parsed);
+    return parsed;
 
   } catch (err) {
     clearTimeout(timeoutId);
@@ -97,7 +118,6 @@ export async function callAPI(url, method, data = null, _isRetry = false) {
     throw err;
   }
 }
-
 
 const API_ORIGIN = (import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "").replace(/\/$/, "");
  

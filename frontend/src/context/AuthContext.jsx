@@ -6,6 +6,9 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);       // {id, name, user_id, userrole, role_name, rights}
   const [company, setCompany] = useState(null);
+  const [org, setOrg] = useState(null);         // active org: {id, name}
+  const [orgs, setOrgs] = useState([]);         // every org this user can open: [{id, name}]
+  const [subscription, setSubscription] = useState(null); // {status, trial_ends_at, current_period_end}
   const [permissions, setPermissions] = useState([]); // canonical list from GET /api/permissions
   const [ready, setReady] = useState(false);     // true once initial hydrate attempt is done
 
@@ -31,6 +34,9 @@ export function AuthProvider({ children }) {
       if (res.success) {
         setUser(res.data.user);
         setCompany(res.data.company || null);
+        setOrg(res.data.org || null);
+        setOrgs(res.data.orgs || []);
+        setSubscription(res.data.subscription || null);
         await fetchPermissions();
       } else {
         localStorage.removeItem("token");
@@ -49,6 +55,9 @@ export function AuthProvider({ children }) {
     localStorage.setItem("token", data.accessToken);
     if (data.refreshToken) localStorage.setItem("refreshToken", data.refreshToken);
     setUser(data.user);
+    setOrg(data.org || null);
+    setOrgs(data.orgs || []);
+    setSubscription(data.subscription || null);
     await fetchPermissions();
   };
 
@@ -57,7 +66,27 @@ export function AuthProvider({ children }) {
     sessionStorage.clear();
     setUser(null);
     setCompany(null);
+    setOrg(null);
+    setOrgs([]);
+    setSubscription(null);
     setPermissions([]);
+  };
+
+  // Mints a token scoped to a different org the user has access to (shown
+  // via the header's org switcher, or when orgs.length > 1). Every page
+  // that's already mounted (Dashboard, Products, ...) fetched its data
+  // under the OLD org and has no reason to know the org just changed, so
+  // rather than teaching every single page to re-fetch on org change, do a
+  // full reload — same reset-everything approach forceLogout() already
+  // uses in callserver.js, and just as reliable here.
+  const switchOrg = async (orgId) => {
+    const res = await callAPI("auth/switch-org", "POST", { org_id: orgId });
+    if (res.success && res.data) {
+      localStorage.setItem("token", res.data.accessToken);
+      if (res.data.refreshToken) localStorage.setItem("refreshToken", res.data.refreshToken);
+      window.location.reload();
+    }
+    return res;
   };
 
   const rights = user?.rights || [];
@@ -74,6 +103,7 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider
       value={{
         user, rights, company, setCompany, permissions, ready,
+        org, orgs, switchOrg, subscription,
         login, logout, hasRight, hasAnyRight, refreshMe: hydrate,
       }}
     >

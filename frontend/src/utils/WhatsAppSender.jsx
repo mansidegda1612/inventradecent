@@ -38,7 +38,7 @@ import { createRoot } from "react-dom/client";
 // (the file that exports Modal, Field, Btn, Spinner — same one used in index.jsx).
 import { Modal, Field, Btn, Spinner } from "../components/ui";
 import { C } from "../utils/theme";
-import { callAPI } from "./callserver";
+import { callAPI, notifyUpgradeRequired } from "./callserver";
 
 // ── COMPANY CONFIG ───────────────────────────────────────────────────────────
 // DEFAULT_COMPANY is only a FALLBACK for when GET /company fails (offline,
@@ -172,6 +172,11 @@ async function dispatchViaServer(phone, message, pdfBlob, fileName) {
 
   const text = await res.text();
   try { data = JSON.parse(text); } catch { data = { message: text }; }
+
+  // send-text/send-media go through a raw fetch (see the comment above),
+  // bypassing callAPI's own 402 handling — surface it here instead so a
+  // Starter-tier account still gets the same upgrade dialog as everywhere else.
+  if (res.status === 402) notifyUpgradeRequired(data);
 
   if (!res.ok || data?.success === false) {
     return {

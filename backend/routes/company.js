@@ -5,8 +5,9 @@ const multer  = require("multer");
 const pool    = require("../config/db");
 const auth    = require("../middleware/AuthMiddleware");
 const requireRight = require("../middleware/requireRight");
+const requireActiveSubscription = require("../middleware/requireActiveSubscription");
 
-router.use(auth);
+router.use(auth, requireActiveSubscription);
 
 // ── logo upload storage ─────────────────────────────────────────────────
 // Back to backend-owned storage — writing into the frontend's folder only
@@ -52,19 +53,31 @@ const upload = multer({
   },
 });
 
-async function getOrCreateCompany() {
-  const [rows] = await pool.query("SELECT * FROM company ORDER BY id ASC LIMIT 1");
-  if (rows.length) return rows[0];
-  const [r] = await pool.query("INSERT INTO company (name) VALUES ('My Company')");
-  const [rows2] = await pool.query("SELECT * FROM company WHERE id=?", [r.insertId]);
-  return rows2[0];
+// Company settings are per-org now (organization + organization_bank),
+// not the old single global `company` row every tenant used to share.
+// The API shape below is kept identical to what it always was — flat
+// fields, `terms` as an array — so CompanyMaster.jsx needed zero changes;
+// only where this data actually lives changed.
+async function getOrgCompany(orgId) {
+  const [rows] = await pool.query(
+    `SELECT o.name, o.tagline, o.address, o.city, o.phone, o.email, o.web, o.pan, o.gstin, o.logo_url,
+            o.invoice_terms AS terms, o.financial_year_start,
+            ob.bank_name, ob.branch AS bank_branch, ob.acc_number AS bank_acc_number,
+            ob.ifsc AS bank_ifsc, ob.upi_id, ob.account_holder
+     FROM organization o
+     LEFT JOIN organization_bank ob ON ob.org_id = o.id AND ob.is_default = 1
+     WHERE o.id = ?`,
+    [orgId]
+  );
+  return rows[0] || null;
 }
 
 // GET /api/company — any logged-in user (needed to print invoices/WhatsApp bills)
 router.get("/company", async (req, res) => {
   // #swagger.tags = ['Company']
   try {
-    const company = await getOrCreateCompany();
+    const company = await getOrgCompany(req.user.oid);
+    if (!company) return res.status(404).json({ success: false, message: "Organization not found" });
     res.json({ success: true, data: company });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
@@ -80,37 +93,48 @@ router.put("/company", requireRight("company.edit"), async (req, res) => {
     terms, financial_year_start,
   } = req.body;
   try {
-    const company = await getOrCreateCompany();
     await pool.query(
-      `UPDATE company SET
+      `UPDATE organization SET
         name=?, tagline=?, address=?, city=?, phone=?, email=?, web=?, pan=?, gstin=?, logo_url=?,
-        bank_name=?, bank_branch=?, bank_acc_number=?, bank_ifsc=?, upi_id=?, account_holder=?,
-        terms=?, financial_year_start=?
+        invoice_terms=?, financial_year_start=?
        WHERE id=?`,
       [
         name, tagline, address, city, phone, email, web, pan, gstin, logo_url,
-        bank_name, bank_branch, bank_acc_number, bank_ifsc, upi_id, account_holder,
         JSON.stringify(terms || []), financial_year_start || null,
-        company.id,
+        req.user.oid,
       ]
     );
-    res.json({ success: true, message: "Company details updated", data: await getOrCreateCompany() });
+
+    const [existingBank] = await pool.query(
+      "SELECT id FROM organization_bank WHERE org_id=? AND is_default=1", [req.user.oid]
+    );
+    if (existingBank.length) {
+      await pool.query(
+        `UPDATE organization_bank SET bank_name=?, branch=?, acc_number=?, ifsc=?, upi_id=?, account_holder=?
+         WHERE id=?`,
+        [bank_name, bank_branch, bank_acc_number, bank_ifsc, upi_id, account_holder, existingBank[0].id]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO organization_bank (org_id, bank_name, branch, acc_number, ifsc, upi_id, account_holder, is_default)
+         VALUES (?,?,?,?,?,?,?,1)`,
+        [req.user.oid, bank_name, bank_branch, bank_acc_number, bank_ifsc, upi_id, account_holder]
+      );
+    }
+
+    res.json({ success: true, message: "Company details updated", data: await getOrgCompany(req.user.oid) });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
   }
 });
 
 // POST /api/company/logo — admin only, multipart/form-data field name "logo"
-// Saves the file into frontend/public/uploads/company/ and stores the
-// resulting same-origin-from-the-frontend path ("/uploads/company/xxx.png")
-// in company.logo_url — that's the path GSTInvoicePrinter/WhatsAppSender read.
 router.post("/company/logo", requireRight("company.edit"), upload.single("logo"), async (req, res) => {
   // #swagger.tags = ['Company']
   if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
   try {
-    const company = await getOrCreateCompany();
     const logoUrl = `/uploads/company/${req.file.filename}`;
-    await pool.query("UPDATE company SET logo_url=? WHERE id=?", [logoUrl, company.id]);
+    await pool.query("UPDATE organization SET logo_url=? WHERE id=?", [logoUrl, req.user.oid]);
     res.json({ success: true, message: "Logo updated", data: { logo_url: logoUrl } });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });

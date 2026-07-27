@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Card, PageHeader, Field, Btn, ToastProvider, SectionDivider } from "../components/ui/index";
+import { Card, PageHeader, Field, Btn, ToastProvider, SectionDivider, Modal, Badge } from "../components/ui/index";
 import { callAPI, resolveAssetUrl } from "../utils/callserver";
 import { useAuth } from "../context/AuthContext";
 import { invalidateCompanyCache as invalidateInvoiceCache } from "../utils/GSTInvoicePrinter";
@@ -13,7 +13,7 @@ const empty = {
 };
 
 export default function CompanyMaster() {
-  const { hasRight, setCompany: setGlobalCompany } = useAuth();
+  const { hasRight, setCompany: setGlobalCompany, org, switchOrg } = useAuth();
   const canEdit = hasRight("company.edit");
   const [form, setForm] = useState(empty);
   const [termsText, setTermsText] = useState("");
@@ -23,9 +23,50 @@ export default function CompanyMaster() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [toasts, setToasts] = useState({ open: false, msg: null, type: null });
 
+  const [orgList, setOrgList] = useState([]);
+  const [addOrgOpen, setAddOrgOpen] = useState(false);
+  const [newOrgName, setNewOrgName] = useState("");
+  const [orgErr, setOrgErr] = useState("");
+  const [creatingOrg, setCreatingOrg] = useState(false);
+  const [switchingOrgId, setSwitchingOrgId] = useState(null);
+
   const show = (msg, type = "success") => {
     setToasts({ open: true, msg, type });
     setTimeout(() => setToasts({ open: false }), 3000);
+  };
+
+  const loadOrgs = async () => {
+    const res = await callAPI("organizations", "GET");
+    if (res.success) setOrgList(res.data || []);
+  };
+
+  const handleSwitchOrg = async (orgId) => {
+    setSwitchingOrgId(orgId);
+    try {
+      await switchOrg(orgId);
+    } finally {
+      setSwitchingOrgId(null);
+    }
+  };
+
+  const handleAddOrg = async () => {
+    setOrgErr("");
+    if (!newOrgName.trim()) { setOrgErr("Name is required"); return; }
+    setCreatingOrg(true);
+    try {
+      const res = await callAPI("organizations", "POST", { name: newOrgName.trim() });
+      if (res.success) {
+        setAddOrgOpen(false);
+        setNewOrgName("");
+        await loadOrgs();
+        // Jump straight into the new org so its details can be filled in.
+        await switchOrg(res.data.id);
+      } else {
+        setOrgErr(res.message || "Could not create organization");
+      }
+    } finally {
+      setCreatingOrg(false);
+    }
   };
 
   const load = async () => {
@@ -41,7 +82,9 @@ export default function CompanyMaster() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  // Re-load both the org list and the active org's own details whenever the
+  // active org changes (e.g. right after creating/switching to a new one).
+  useEffect(() => { load(); loadOrgs(); }, [org?.id]);
 
   const save = async () => {
     setSaving(true);
@@ -94,11 +137,45 @@ export default function CompanyMaster() {
     }
   };
 
-  if (loading) return <p className="u-muted">Loading company details…</p>;
+  if (loading) return <p className="u-muted">Loading organization details…</p>;
 
   return (
     <div>
-      <PageHeader title="Company Settings" sub="These details appear on every printed invoice and WhatsApp bill." />
+      <PageHeader title="Organization Details" sub="These details appear on every printed invoice and WhatsApp bill." />
+
+      <Card title="Your Organizations">
+        <div className="org-list">
+          {orgList.map(o => (
+            <div key={o.id} className="org-list-row">
+              <span className="org-list-name">{o.name}</span>
+              {o.id === org?.id ? (
+                <Badge color="#1D9E75">Active</Badge>
+              ) : (
+                <Btn small variant="ghost" onClick={() => handleSwitchOrg(o.id)} disabled={switchingOrgId === o.id}>
+                  {switchingOrgId === o.id ? "Switching…" : "Switch to this org"}
+                </Btn>
+              )}
+            </div>
+          ))}
+        </div>
+        {canEdit && (
+          <Btn small variant="ghost" onClick={() => setAddOrgOpen(true)} style={{ marginTop: 12 }}>
+            + Add Organization
+          </Btn>
+        )}
+      </Card>
+
+      <Modal open={addOrgOpen} onClose={() => { setAddOrgOpen(false); setOrgErr(""); }} title="Add Organization" width={400}>
+        <Field label="Organization Name" required>
+          <input value={newOrgName} onChange={e => setNewOrgName(e.target.value)} autoFocus />
+        </Field>
+        {orgErr && <p className="login-error">{orgErr}</p>}
+        <Btn onClick={handleAddOrg} disabled={creatingOrg} className="plan-card-btn">
+          {creatingOrg ? "Creating…" : "Create Organization"}
+        </Btn>
+      </Modal>
+
+      <SectionDivider label="Organization Details" />
 
       {!canEdit && (
         <p className="u-muted u-fs12" style={{ marginBottom: 12 }}>

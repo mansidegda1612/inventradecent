@@ -1,11 +1,12 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Card, PageHeader, DataGrid, ToastProvider, Badge } from "../components/ui/index";
-import { callAPI } from "../utils/callserver";
+import { callAPI, notifyUpgradeRequired } from "../utils/callserver";
 import { useAuth } from "../context/AuthContext";
 import UserFormModal from "./UserFormModal";
 
 export default function UserManagement() {
-  const { hasRight } = useAuth();
+  const { hasRight, subscription } = useAuth();
+  const maxUsers = subscription?.plan?.maxUsers;
   const [list, setList] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -36,9 +37,21 @@ export default function UserManagement() {
 
   const handleSaved = () => fetchUsers(loadModelRef.current);
 
+  // DataGrid here runs in client-side mode (fetchUsers pulls the whole list),
+  // so it never auto-calls onFetch — load once on mount ourselves. Without
+  // this the grid stayed empty until a save triggered a refetch.
+  useEffect(() => { fetchUsers(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const atUserLimit = maxUsers != null && total >= maxUsers;
+
   return (
     <div>
-      <PageHeader title="User Management" sub="Create users, assign a role, and grant any extra rights." />
+      <PageHeader
+        title="User Management"
+        sub={atUserLimit
+          ? `You're using all ${maxUsers} user seat(s) on your plan. Upgrade to add more.`
+          : "Create users, assign a role, and grant any extra rights."}
+      />
 
       <Card noPad>
         <DataGrid
@@ -70,7 +83,19 @@ export default function UserManagement() {
           loading={loading}
           onFetch={fetchUsers}
           HeaderButtons={hasRight("users.create") ? [
-            { key: "Add", label: "Add User", icon: "+", variant: "primary", onClick: () => userRef.current?.openAdd() },
+            {
+              key: "Add", label: atUserLimit ? "Add User (limit reached)" : "Add User", icon: "+", variant: "primary",
+              onClick: () => {
+                if (atUserLimit) {
+                  notifyUpgradeRequired({
+                    code: "USER_LIMIT_REACHED",
+                    message: `Your plan (${subscription.plan.name}) allows up to ${maxUsers} user(s). Upgrade to add more.`,
+                  });
+                  return;
+                }
+                userRef.current?.openAdd();
+              },
+            },
           ] : []}
           footerButtons={[
             ...(hasRight("users.edit") ? [{

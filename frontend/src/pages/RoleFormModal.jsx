@@ -1,12 +1,9 @@
 import { useState, useImperativeHandle, forwardRef } from "react";
 import { Btn, Modal, Field, ConfirmModal, ToastProvider } from "../components/ui/index";
-import PermissionMatrix from "../components/ui/PermissionMatrix";
-import { allPermissionKeys } from "../utils/permissions";
+import RightsEditor from "../components/ui/RightsEditor";
 import { callAPI } from "../utils/callserver";
-import { useAuth } from "../context/AuthContext";
 
 const RoleFormModal = forwardRef(function RoleFormModal({ onSaved }, ref) {
-  const { permissions } = useAuth();
   const [modal, setModal] = useState(false);
   const [edit, setEdit] = useState(null);
   const [form, setForm] = useState({ role: "", rights: [] });
@@ -81,17 +78,14 @@ const RoleFormModal = forwardRef(function RoleFormModal({ onSaved }, ref) {
           />
         </Field>
 
-        <div className="u-modal-footer-actions" style={{ justifyContent: "flex-start", marginBottom: 8 }}>
-          <Btn small variant="ghost" onClick={() => setForm({ ...form, rights: allPermissionKeys(permissions) })}>
-            Select all
-          </Btn>
-          <Btn small variant="ghost" onClick={() => setForm({ ...form, rights: [] })}>
-            Clear all
-          </Btn>
-        </div>
-
         <Field label="Rights">
-          <PermissionMatrix value={form.rights} onChange={(rights) => setForm({ ...form, rights })} />
+          {form.rights.includes("*") ? (
+            <div className="rights-role-preview">
+              <span className="rights-chip is-on">✓ Full access — every module, including any added in future</span>
+            </div>
+          ) : (
+            <RightsEditor value={form.rights} onChange={(rights) => setForm({ ...form, rights })} />
+          )}
         </Field>
 
         <div className="u-modal-footer-actions">

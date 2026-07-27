@@ -1,8 +1,13 @@
 const router = require("express").Router();
 const pool   = require("../config/db");
 const auth   = require("../middleware/AuthMiddleware");
+const loadContext = require("../middleware/loadContext");
+const requireActiveSubscription = require("../middleware/requireActiveSubscription");
 
-router.use(auth);
+const requireRight = require("../middleware/requireRight");
+router.use(auth, loadContext, requireActiveSubscription);
+// Path-scoped, not blanket — see the note in routes/dashboard.js.
+router.use("/reports/financial", requireRight("reports.financial"));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/reports/financial?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -42,6 +47,7 @@ router.use(auth);
 
 router.get("/reports/financial", async (req, res) => {
   const { from = "", to = "" } = req.query;
+  const orgId = req.ctx.orgId;
 
   try {
     // ── date params ──────────────────────────────────────────────────────────
@@ -51,6 +57,10 @@ router.get("/reports/financial", async (req, res) => {
       if (to)   parts.push(`DATE(${alias}.date) <= ${pool.escape(to)}`);
       return parts.length ? "AND " + parts.join(" AND ") : "";
     };
+    // orgId is a trusted integer straight off the verified token (never
+    // user input), so inlining it via pool.escape() alongside the existing
+    // date literals above is safe and matches this file's own convention.
+    const orgWhere = (alias = "t") => `AND ${alias}.org_id = ${pool.escape(orgId)}`;
 
     // ── 1. Sales summary (SI) ─────────────────────────────────────────────
     const [salesRows] = await pool.query(`
@@ -64,7 +74,7 @@ router.get("/reports/financial", async (req, res) => {
       FROM \`transaction\` t
       LEFT JOIN transaction_items ti ON ti.transaction_id = t.id
       WHERE t.trans_type = 'SI'
-      ${dateWhere()}
+      ${orgWhere()} ${dateWhere()}
     `);
 
     // ── 2. Purchase summary (PI) ──────────────────────────────────────────
@@ -79,7 +89,7 @@ router.get("/reports/financial", async (req, res) => {
       FROM \`transaction\` t
       LEFT JOIN transaction_items ti ON ti.transaction_id = t.id
       WHERE t.trans_type = 'PI'
-      ${dateWhere()}
+      ${orgWhere()} ${dateWhere()}
     `);
 
     // ── 3. Cash sales (cash_debit = C, SI) ───────────────────────────────
@@ -87,33 +97,34 @@ router.get("/reports/financial", async (req, res) => {
       SELECT COALESCE(SUM(final_amount),0) AS cash_sales
       FROM \`transaction\` t
       WHERE trans_type = 'SI' AND cash_debit = 'C'
-      ${dateWhere()}
+      ${orgWhere()} ${dateWhere()}
     `);
 
     // ── 4. Stock value (current, not date-filtered – it's a snapshot) ────
     const [stockRows] = await pool.query(`
       SELECT COALESCE(SUM(c_qty * purc_rate),0) AS stock_value
       FROM product
+      WHERE org_id = ${pool.escape(orgId)}
     `);
 
     // ── 5. Accounts receivable: customers with positive closing balance ──
     const [arRows] = await pool.query(`
       SELECT COALESCE(SUM(closing),0) AS accounts_receivable
       FROM customer
-      WHERE closing > 0
+      WHERE org_id = ${pool.escape(orgId)} AND closing > 0
     `);
 
     // ── 6. Accounts payable: customers/suppliers with negative closing ───
     const [apRows] = await pool.query(`
       SELECT COALESCE(SUM(ABS(closing)),0) AS accounts_payable
       FROM customer
-      WHERE closing < 0
+      WHERE org_id = ${pool.escape(orgId)} AND closing < 0
     `);
 
     // ── 7. Monthly trend (last 12 months, or filtered range grouped by month)
     const monthFilter = from && to
-      ? `WHERE DATE(t.date) >= ${pool.escape(from)} AND DATE(t.date) <= ${pool.escape(to)}`
-      : `WHERE DATE(t.date) >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)`;
+      ? `WHERE t.org_id = ${pool.escape(orgId)} AND DATE(t.date) >= ${pool.escape(from)} AND DATE(t.date) <= ${pool.escape(to)}`
+      : `WHERE t.org_id = ${pool.escape(orgId)} AND DATE(t.date) >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)`;
 
     const [monthlyRows] = await pool.query(`
       SELECT
@@ -136,7 +147,7 @@ router.get("/reports/financial", async (req, res) => {
       JOIN \`transaction\` t ON t.id = ti.transaction_id
       JOIN product p         ON p.id = ti.product_id
       WHERE t.trans_type = 'SI'
-      ${dateWhere()}
+      ${orgWhere()} ${dateWhere()}
       GROUP BY p.id, p.name
       ORDER BY total_value DESC
       LIMIT 5
@@ -154,7 +165,7 @@ router.get("/reports/financial", async (req, res) => {
       FROM \`transaction\` t
       JOIN customer c ON c.id = t.customer_id
       WHERE t.trans_type = 'SI' AND t.cash_debit = 'D'
-      ${dateWhere()}
+      ${orgWhere()} ${dateWhere()}
       GROUP BY t.customer_id, c.name
       ORDER BY total_value DESC
       LIMIT 5
@@ -168,7 +179,7 @@ router.get("/reports/financial", async (req, res) => {
       FROM \`transaction\` t
       LEFT JOIN cashcustdetail cd ON cd.transaction_id = t.id
       WHERE t.trans_type = 'SI' AND t.cash_debit = 'C'
-      ${dateWhere()}
+      ${orgWhere()} ${dateWhere()}
       GROUP BY cd.CustName
       ORDER BY total_value DESC
       LIMIT 5
