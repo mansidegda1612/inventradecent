@@ -28,6 +28,8 @@ import {
 import {
   calcItemAmounts,
   calcTotals,
+  calcGSTFactor,
+  getExpenseBase,
   calcExpenseFromPercentage,
   calcPercentageFromExpense,
   getEmptyForm,
@@ -131,13 +133,22 @@ export default function PurchaseEntry() {
       return;
     }
     const d = res.data;
-    const subtotal = d.items.reduce((s, i) => s + (i.taxable_amount || 0), 0);
-    const expenses = DEFAULT_EXPENSES.map((e) => ({ ...e }));
-    for (const item of expenses) {
-      item.amount = d[item.key];
-      item.pct = calcPercentageFromExpense(subtotal, item.amount);
-    }
     const isgstbill = d.isgstbill == 1 ? true : false;
+    // Only the manually entered expenses are stored on the master — GST and
+    // roundoff are re-derived from the sequence below.
+    const expenses = DEFAULT_EXPENSES.map((e) => ({
+      ...e,
+      amount: e.editable ? parseFloat(d[e.key]) || 0 : 0,
+    }));
+
+    const rawItems = (d.items ?? []).map((i) => ({
+      ...i,
+      taxable_amount: parseFloat(i.taxable_amount) || 0,
+    }));
+    // GST was charged on the post-discount base when this bill was saved, so
+    // the stored CGST/SGST must be read back against that same base.
+    const gstFactor = isgstbill ? calcGSTFactor(rawItems, expenses) : 1;
+
     let obj = {
       cash_debit: d.cash_debit ?? "C",
       customer_name : d.customer_name ?? "",
@@ -149,23 +160,26 @@ export default function PurchaseEntry() {
       bill_no: d.bill_no ?? "",
       date: (d.date ?? today()).slice(0, 10),
       isGSTBill: isgstbill,
-      items: (d.items ?? []).map((i) => {
+      items: rawItems.map((i) => {
         const gst = splitGST(i?.gstPer || 0);
-        const cgst_pct = isgstbill && i.taxable_amount
-          ? (i.CGST / i.taxable_amount) * 100
+        // derive pct against the base GST was actually charged on
+        const gstBase = i.taxable_amount * gstFactor;
+        const cgst_pct = isgstbill && gstBase
+          ? (parseFloat(i.CGST) / gstBase) * 100
           : gst.cgst;
-        const sgst_pct = isgstbill && i.taxable_amount
-          ? (i.SGST / i.taxable_amount) * 100
+        const sgst_pct = isgstbill && gstBase
+          ? (parseFloat(i.SGST) / gstBase) * 100
           : gst.sgst;
         const itemBase = {
           product_id: i.product_id,
           name: i.product_name ?? "",
+          hsn_code: i.hsn_code ?? "",
           qty: parseFloat(i.qty) || 1,
           rate: parseFloat(i.rate) || 0,
           cgst_pct,
           sgst_pct,
         };
-        const amounts = calcItemAmounts(itemBase, isgstbill);
+        const amounts = calcItemAmounts(itemBase, isgstbill, gstFactor);
         return { ...itemBase, ...amounts };
       }),
       expenses: expenses,
@@ -173,6 +187,17 @@ export default function PurchaseEntry() {
       roundoff_type: "₹",
       final_amount: d.final_amount,
     };
+
+    // Resolve the sequence so every expense carries its base/amount — and show
+    // each % against the amount it is actually calculated on.
+    const totals = calcTotals(obj.items, obj.expenses, isgstbill);
+    obj.items = totals.items;
+    obj.expenses = totals.expenses.map((e) => ({
+      ...e,
+      pct: e.editable ? calcPercentageFromExpense(e.base, e.amount) : e.pct,
+    }));
+    obj.roundoff = totals.roundoff;
+
     return obj;
   }
 
@@ -223,13 +248,9 @@ export default function PurchaseEntry() {
     if (form.cash_debit === "D" && !form.customer_id) { show("Please select a supplier!", "error"); return; }
     if (form.cash_debit === "C" && !form.customer_name_cash.trim()) { show("Please enter supplier name!", "error"); return; }
 
+    // totals.expenses carries the resolved GST / roundoff amounts, and
+    // totals.items the per-line GST charged on the post-discount base.
     const totals = calcTotals(form.items, form.expenses, form.isGSTBill);
-
-    for (const item of form.expenses) {
-      if (item.key == "roundoff") {
-        item.amount = totals.roundoff;
-      }
-    }
 
     const payload = {
       trans_type: "PI",
@@ -242,8 +263,8 @@ export default function PurchaseEntry() {
       roundoff: parseFloat(totals.roundoff) || 0,
       final_amount: parseFloat(totals.final),
       isGSTBill: form.isGSTBill ? 1 : 0,
-      expenses: form.expenses,
-      items: form.items.map((i) => ({
+      expenses: totals.expenses,
+      items: totals.items.map((i) => ({
         product_id: i.product_id,
         qty: parseFloat(i.qty),
         rate: parseFloat(i.rate),
@@ -323,13 +344,16 @@ export default function PurchaseEntry() {
     setForm((f) => {
       const updated = [...f.expenses];
       const exp = { ...updated[index] };
-      const subtotal = f.items.reduce((s, i) => s + (i.taxable_amount || 0), 0);
+      // % is charged on the amount this expense sits on in the sequence — for
+      // the first expense that's the item amount, for a later one it's the
+      // running total after everything before it.
+      const base = getExpenseBase(f.items, f.expenses, index, f.isGSTBill);
       if (field === "pct") {
         exp.pct = parseFloat(value);
-        exp.amount = calcExpenseFromPercentage(subtotal, exp.pct);
+        exp.amount = calcExpenseFromPercentage(base, exp.pct);
       } else if (field === "amount") {
         exp.amount = parseFloat(value);
-        exp.pct = calcPercentageFromExpense(subtotal, exp.amount);
+        exp.pct = calcPercentageFromExpense(base, exp.amount);
       }
       updated[index] = exp;
       return { ...f, expenses: updated };
@@ -504,18 +528,17 @@ export default function PurchaseEntry() {
 
               <TransactionSummary
                 itemAmount={subtotal}
-                expenses={form.expenses}
+                expenses={totals.expenses}
                 onExpenseUpdate={updateExpense}
                 final={final}
-                roundoff={totals.roundoff}
-                gst={totals.totalGST}
+                isGSTBill={form.isGSTBill}
               />
             </div>
 
             {/* RIGHT: Scrollable Product Grid */}
             <div className="tr-right">
               <ProductEntryGrid
-                items={form.items}
+                items={totals.items}
                 onItemUpdate={updateItem}
                 onItemRemove={removeItem}
                 isGSTBill={form.isGSTBill}

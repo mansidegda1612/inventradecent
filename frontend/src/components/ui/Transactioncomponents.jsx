@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { fmt, fmtDateShort, fmtNum } from "../../utils/format";
 import { C } from "../../utils/theme";
 import { Btn, Field, Dropdown, TableWrap } from "./index";
+import { expenseSequence } from "../../utils/TransactionUtils";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TRANSACTION HEADER
@@ -567,9 +568,10 @@ export function ExpenseEntryGrid({ expenses, onExpenseUpdate }) {
       </div>
       <table className="tr-expense-table-v2">
         <tbody>
-          {expenses
-            .filter(item => item.editable)// render editable  expenses only
-            .map((exp, idx) => (
+          {/* in the order they are applied (seq) — editable ones only */}
+          {expenseSequence(expenses)
+            .filter(({ exp }) => exp.editable)
+            .map(({ exp, index }) => (
               <tr key={exp.key}>
                 <td className="tr-exp-name">{exp.label}</td>
                 <td className="tr-exp-sign">{exp.sign}</td>
@@ -579,10 +581,7 @@ export function ExpenseEntryGrid({ expenses, onExpenseUpdate }) {
                       type="number"
                       className="tr-exp-input"
                       value={exp.pct}
-                      onChange={(e) => onExpenseUpdate(
-                        expenses.findIndex(e2 => e2.key === exp.key),
-                        "pct", e.target.value
-                      )}
+                      onChange={(e) => onExpenseUpdate(index, "pct", e.target.value)}
                     />
                     <span className="tr-exp-unit">%</span>
                   </div>
@@ -592,11 +591,7 @@ export function ExpenseEntryGrid({ expenses, onExpenseUpdate }) {
                     type="number"
                     className="tr-exp-input"
                     value={exp.amount}
-                    onChange={(e) => onExpenseUpdate(
-                      expenses.findIndex(e2 => e2.key === exp.key),
-                      "amount", e.target.value
-                    )}
-
+                    onChange={(e) => onExpenseUpdate(index, "amount", e.target.value)}
                   />
                 </td>
               </tr>
@@ -611,7 +606,7 @@ export function ExpenseEntryGrid({ expenses, onExpenseUpdate }) {
 // TRANSACTION SUMMARY
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function TransactionSummary({ itemAmount, expenses, final, roundoff, gst }) {
+export function TransactionSummary({ itemAmount, expenses, final, isGSTBill = true }) {
   return (
     <div className="tr-summary-card">
       <div className="tr-section-title">Bill Summary</div>
@@ -621,30 +616,27 @@ export function TransactionSummary({ itemAmount, expenses, final, roundoff, gst 
         <span className="tr-summary-row-value tr-amount">{fmt(itemAmount)}</span>
       </div>
 
-      {expenses
-        .filter(exp => exp.editable)
-        .map((exp) => (
+      {/* Every expense in the order it is applied — each one calculated on the
+          running total of the rows above it, which is why GST reads as tax on
+          the post-discount amount. `base` comes from calcTotals(). */}
+      {expenseSequence(expenses).map(({ exp }) => {
+        if (exp.key === "gst" && !isGSTBill) return null;
+        const amount = parseFloat(exp.amount) || 0;
+        const minus = exp.sign === "(-)" || (!exp.sign && amount < 0);
+        return (
           <div className="tr-summary-row" key={exp.key}>
-            <span className="tr-summary-row-label">{exp.label}</span>
-            <span className={`tr-summary-row-value tr-amount ${exp.sign === "+" ? "plus" : "minus"}`}>
-              {exp.sign} {fmt(exp.amount || 0)}
+            <span className="tr-summary-row-label">
+              {exp.label}
+              {exp.base != null && (
+                <span className="tr-hint-text u-fs11"> on {fmt(exp.base)}</span>
+              )}
+            </span>
+            <span className={`tr-summary-row-value tr-amount ${minus ? "minus" : "plus"}`}>
+              {minus ? "(−)" : "(+)"} {fmt(Math.abs(amount))}
             </span>
           </div>
-        ))}
-
-      <div className="tr-summary-row">
-        <span className="tr-summary-row-label">Total GST</span>
-        <span className={`tr-summary-row-value tr-amount plus`}>
-          {"(+)"} {fmt(gst || 0)}
-        </span>
-      </div>
-
-      <div className="tr-summary-row">
-        <span className="tr-summary-row-label">Round Off</span>
-        <span className={`tr-summary-row-value tr-amount ${roundoff >= 0 ? "plus" : "minus"}`}>
-          {roundoff >= 0 ? "(+)" : "(−)"} {fmt(Math.abs(roundoff))}
-        </span>
-      </div>
+        );
+      })}
 
       <div className="tr-summary-divider" />
 
