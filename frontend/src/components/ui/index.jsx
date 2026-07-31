@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback , forwardRef ,useImperativeHandle } from "react";
 import { fmt, fmtDateShort, fmtDateISO } from "../../utils/format";
 import { C } from "../../utils/theme";
+import { subscribeLoading } from "../../utils/callserver";
 import * as XLSX from 'xlsx';
 
 // ── theme tokens → CSS variables ───────────────────────────────────────────
@@ -966,8 +967,9 @@ export function DataGrid({
 //  4. Stepper          — progress stepper (e.g. wizard forms)
 //  5. EmptyState       — consistent "no data" / "not found" placeholder
 //  6. Spinner          — inline or overlay loading spinner
-//  7. SectionDivider   — labelled horizontal divider
-//  8. KVTable          — key → value rows (for detail panels / summaries)
+//  7. GlobalLoader     — app-wide "please wait" overlay, auto-driven by callAPI
+//  8. SectionDivider   — labelled horizontal divider
+//  9. KVTable          — key → value rows (for detail panels / summaries)
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─── inject shared keyframes once ────────────────────────────────────────────
@@ -1511,7 +1513,41 @@ export function Spinner({ size = 22, color, overlay = false, label }) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 7. SECTION DIVIDER
+// 7. GLOBAL LOADER
+//
+//  Full-screen "please wait" overlay, driven entirely by callserver.js — any
+//  callAPI anywhere in the app turns it on, so no page has to wire up its own
+//  busy flag for it. Mounted once in App.jsx (outside AppShell, so it also
+//  covers Login / the platform console); pages never render it themselves.
+//
+//  Deliberately blocking — it swallows clicks so a form can't be
+//  double-submitted while its request is in flight. For non-blocking, in-place
+//  busy states keep using <Spinner/> or DataGrid's own `loading` prop.
+//
+//  Props
+//  ─────
+//  message  string    text under the spinner (default "Please wait…")
+// ─────────────────────────────────────────────────────────────────────────────
+export function GlobalLoader({ message = "Please wait…" }) {
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => subscribeLoading(setBusy), []);
+
+  if (!busy) return null;
+
+  return (
+    <div className="global-loader" role="alert" aria-busy="true" aria-live="polite">
+      <div className="global-loader-box">
+        <Spinner size={34} />
+        <span className="global-loader-text">{message}</span>
+      </div>
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. SECTION DIVIDER
 //
 //  Props
 //  ─────
@@ -1531,7 +1567,7 @@ export function SectionDivider({ label, action }) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8. KV TABLE  (key → value, for detail panels / summaries)
+// 9. KV TABLE  (key → value, for detail panels / summaries)
 //
 //  Props
 //  ─────

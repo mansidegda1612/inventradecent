@@ -3,10 +3,29 @@ import { useAuth } from "../../context/AuthContext";
 
 // Never negative, always rounds up so "expires in a few hours" still reads
 // as "1 day left" rather than "0".
+// The API sends MySQL DATETIME strings ("2027-12-31 00:00:00"), which aren't
+// ISO-8601 — swapping in the T keeps new Date() on a format it's specified to
+// parse rather than one every browser guesses at.
 function daysRemaining(dateStr) {
   if (!dateStr) return null;
-  const diffMs = new Date(dateStr).getTime() - Date.now();
-  return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+  const parsed = new Date(String(dateStr).replace(" ", "T")).getTime();
+  if (isNaN(parsed)) return null;
+  return Math.max(0, Math.ceil((parsed - Date.now()) / (1000 * 60 * 60 * 24)));
+}
+
+// A paid subscription only gets a header pill inside this window. Matches the
+// first reminder email milestone (backend/utils/subscriptionReminders.js), so
+// the pill appears the same day the "expires in 10 days" email goes out and
+// then counts down with it.
+const RENEWAL_NOTICE_DAYS = 10;
+
+// Anything this close deserves the louder red pill rather than the amber one.
+const URGENT_DAYS = 3;
+
+function expiryLabel(days) {
+  if (days <= 0) return "Expires today";
+  if (days === 1) return "Expires tomorrow";
+  return `Expiring in ${days} days`;
 }
 
 function HamburgerIcon() {
@@ -88,6 +107,21 @@ export default function Header({ setPage, mobileOpen, setMobileOpen }) {
 
   const initial = (user?.name || "?").trim().charAt(0).toUpperCase();
 
+  // Exactly one of these is ever non-null: a trial countdown while trialing,
+  // or a renewal countdown once a paid period is running and inside its notice
+  // window. Lapsed accounts never reach this header — App.jsx renders the lock
+  // screen instead.
+  const trialDaysLeft = subscription?.status === "trialing"
+    ? daysRemaining(subscription.trial_ends_at)
+    : null;
+
+  const paidDaysLeft = subscription?.status === "active"
+    ? daysRemaining(subscription.current_period_end)
+    : null;
+  const renewalDaysLeft = paidDaysLeft != null && paidDaysLeft <= RENEWAL_NOTICE_DAYS
+    ? paidDaysLeft
+    : null;
+
   const go = (page) => { setPage(page); setMenuOpen(false); };
 
   // logout() already clears session storage, but `page` is in-memory React
@@ -108,10 +142,24 @@ export default function Header({ setPage, mobileOpen, setMobileOpen }) {
 
       <OrgSwitcher org={org} orgs={orgs} switchOrg={switchOrg} />
 
-      {subscription?.status === "trialing" && (
-        <button className="trial-pill" onClick={() => setPage("plans")}>
-          Trial: {daysRemaining(subscription.trial_ends_at)}d left
+      {trialDaysLeft != null && (
+        <button
+          className={`trial-pill ${trialDaysLeft <= URGENT_DAYS ? "trial-pill-urgent" : ""}`}
+          onClick={() => setPage("plans")}
+        >
+          Trial: {trialDaysLeft}d left
           <span className="trial-pill-upgrade">Upgrade</span>
+        </button>
+      )}
+
+      {renewalDaysLeft != null && (
+        <button
+          className={`trial-pill ${renewalDaysLeft <= URGENT_DAYS ? "trial-pill-urgent" : ""}`}
+          onClick={() => setPage("plans")}
+          title={`Your ${subscription.plan?.name || "plan"} is valid through ${new Date(String(subscription.current_period_end).replace(" ", "T")).toDateString()}`}
+        >
+          {expiryLabel(renewalDaysLeft)}
+          <span className="trial-pill-upgrade">Renew</span>
         </button>
       )}
 

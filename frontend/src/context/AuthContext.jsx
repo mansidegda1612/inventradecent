@@ -15,9 +15,9 @@ export function AuthProvider({ children }) {
   // Fetched once per session — this is metadata about what permissions
   // *exist* (for rendering the rights matrix), not the current user's
   // own rights. It rarely changes, so no need to refetch on every render.
-  const fetchPermissions = useCallback(async () => {
+  const fetchPermissions = useCallback(async (silent = false) => {
     try {
-      const res = await callAPI("permissions", "GET");
+      const res = await callAPI("permissions", "GET", null, false, 60000, silent);
       if (res.success) setPermissions(res.data || []);
     } catch {
       // non-fatal — RoleFormModal/UserFormModal just render an empty matrix
@@ -26,18 +26,22 @@ export function AuthProvider({ children }) {
 
   // Rehydrate from the token alone — never trust stale localStorage values
   // for rights, since a role could have changed since the last login.
-  const hydrate = useCallback(async () => {
+  //
+  // `silent` skips the global loading overlay, for callers that poll this in
+  // the background (App.jsx's subscription lock waiting on activation) — the
+  // user didn't ask for those, so dimming the screen on each one is noise.
+  const hydrate = useCallback(async ({ silent = false } = {}) => {
     const token = localStorage.getItem("token");
     if (!token) { setReady(true); return; }
     try {
-      const res = await callAPI("auth/me", "GET");
+      const res = await callAPI("auth/me", "GET", null, false, 60000, silent);
       if (res.success) {
         setUser(res.data.user);
         setCompany(res.data.company || null);
         setOrg(res.data.org || null);
         setOrgs(res.data.orgs || []);
         setSubscription(res.data.subscription || null);
-        await fetchPermissions();
+        await fetchPermissions(silent);
       } else {
         localStorage.removeItem("token");
         localStorage.removeItem("refreshToken");

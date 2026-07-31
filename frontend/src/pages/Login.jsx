@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Btn, Field, PasswordInput } from "../components/ui";
-import { callAPI } from "../utils/callserver";
+import { callAPI, takeAuthNotice } from "../utils/callserver";
 import { useAuth } from "../context/AuthContext";
 
 export default function Login() {
@@ -9,6 +9,11 @@ export default function Login() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Why the last session ended, if it ended for a reason worth explaining
+  // (today: the company's subscription lapsed mid-session). Read once on the
+  // initial render so the message survives this component re-rendering, and
+  // cleared as soon as the user tries to sign in again.
+  const [notice, setNotice] = useState(() => takeAuthNotice());
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -22,6 +27,7 @@ export default function Login() {
 
   const handle = async () => {
     setErr("");
+    setNotice("");
     setLoading(true);
     try {
       const res = await callAPI("auth/login", "POST", { user_id: email, password });
@@ -70,6 +76,8 @@ export default function Login() {
 
         {mode === "login" ? (
           <div className="login-card">
+            {notice && <p className="login-notice">{notice}</p>}
+
             <Field label="Email or Phone" required>
               <input
                 value={email}

@@ -383,7 +383,8 @@ router.post("/platform/accounts", async (req, res) => {
 // dates, optionally record the money received. On the next login the customer
 // gets the full app, because computeEffectiveStatus() reads 'active' plus a
 // current_period_end in the future. When that date passes, the same function
-// drops them to read-only on its own — no cron job involved.
+// locks the account on its own — no cron job involved (staff are refused a
+// login, the owner is left with Plans & Billing; see utils/accessGate.js).
 //
 // `subscription` has UNIQUE KEY uq_sub_account, so this is an update-in-place
 // of the account's one row.

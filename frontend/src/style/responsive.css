@@ -625,6 +625,31 @@
 .ui-spinner-label { font-size: 12px; color: var(--muted); font-weight: 600; }
 
 /* ============================================================================
+   GLOBAL LOADER (components/ui/GlobalLoader.jsx — while any callAPI is pending)
+   Sits above modals (1000) and toasts (2000): a request fired *from* a modal
+   still has to cover it, otherwise the form stays clickable while saving.
+   ============================================================================ */
+.global-loader {
+  position: fixed; inset: 0; z-index: 3000; cursor: progress;
+  display: flex; align-items: center; justify-content: center;
+  /* Plain dim, no backdrop-filter — same scrim as .ui-modal-overlay above, so
+     a request looks like any other popup instead of a separate visual mode. */
+  background: rgba(0,0,0,.31);
+  animation: xc-fadeIn .14s ease;
+}
+.global-loader-box {
+  display: flex; flex-direction: column; align-items: center; gap: 13px;
+  padding: 24px 32px; border-radius: 14px;
+  background: var(--card); border: 1px solid var(--border);
+  box-shadow: 0 14px 38px rgba(0,0,0,.18);
+}
+.global-loader-text { font-size: 12.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+
+@media (max-width: 480px) {
+  .global-loader-box { padding: 20px 26px; }
+}
+
+/* ============================================================================
    SECTION DIVIDER
    ============================================================================ */
 .ui-sectiondivider { display: flex; align-items: center; gap: 12px; margin: 6px 0; }
@@ -1202,6 +1227,46 @@
 .sub-banner-expired { background: #FEF2F2; color: #991B1B; border-color: #FECACA; }
 
 /* ============================================================================
+   SUBSCRIPTION LOCK — the whole screen the account owner of a lapsed account
+   gets instead of the app (App.jsx <SubscriptionLock/>): reason + Plans page.
+   Its own bare chrome, since the Sidebar/Header never mount here.
+   ============================================================================ */
+.sub-lock {
+  min-height: 100vh;
+  background-color: #F4F6FA;
+  background-image: var(--brand-pattern);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.sub-lock-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 14px 24px; background: #fff; border-bottom: 1px solid var(--border);
+}
+.sub-lock-brand { font-size: 20px; font-weight: 900; color: #111827; letter-spacing: -.02em; }
+.sub-lock-bar-right { display: flex; align-items: center; gap: 12px; }
+.sub-lock-who {
+  font-size: 13px; font-weight: 600; color: var(--muted);
+  max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sub-lock-body { max-width: 960px; margin: 0 auto; padding: 28px 20px 48px; }
+.sub-lock-card {
+  background: #FEF2F2; border: 1px solid #FECACA; border-radius: 16px;
+  padding: 22px 24px; margin-bottom: 28px;
+}
+.sub-lock-title { margin: 0 0 8px; font-size: 20px; font-weight: 800; color: #991B1B; }
+.sub-lock-text { margin: 0; font-size: 14px; line-height: 1.6; color: #7F1D1D; }
+.sub-lock-reassure { margin: 10px 0 0; font-size: 13px; line-height: 1.6; color: var(--sub); }
+
+@media (max-width: 640px) {
+  .sub-lock-bar { padding: 12px 14px; }
+  .sub-lock-brand { font-size: 17px; }
+  .sub-lock-who { display: none; }
+  .sub-lock-body { padding: 18px 14px 36px; }
+  .sub-lock-card { padding: 18px; border-radius: 14px; }
+}
+
+/* ============================================================================
    LOGIN
    ============================================================================ */
 .login-page {
@@ -1223,6 +1288,13 @@
   padding: 28px; box-shadow: 0 8px 40px rgba(79,70,229,.08);
 }
 .login-error { color: var(--red); font-size: 12px; margin-bottom: 14px; }
+/* Why the previous session ended (e.g. the company's subscription lapsed) —
+   an explanation, not a validation error, so it gets its own calmer callout. */
+.login-notice {
+  background: #FFFBEB; border: 1px solid #FDE68A; color: #92400E;
+  font-size: 12.5px; font-weight: 600; line-height: 1.5;
+  padding: 10px 12px; border-radius: 10px; margin: 0 0 16px;
+}
 .login-submit-btn { width: 100%; justify-content: center; }
 .login-switch-mode { text-align: center; font-size: 13px; color: var(--muted); margin: 16px 0 0; }
 .login-switch-link {
@@ -1340,6 +1412,55 @@
 .wa-error-text { color: var(--red); font-size: 11.5px; margin-top: 6px; font-weight: 600; }
 .wa-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .wa-send-btn { background: #25D366; }
+
+/* --- editable message + attachment (send preview) --- */
+.wa-label-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px; gap: 8px;
+}
+.wa-label {
+  font-size: 11.5px; font-weight: 700; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--muted);
+}
+.wa-link-btn {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600;
+  color: var(--accent); text-decoration: underline; text-underline-offset: 2px;
+}
+.wa-link-btn:hover:not(:disabled) { opacity: .75; }
+.wa-link-btn:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+.wa-link-btn.wa-link-danger { color: var(--red); }
+
+.wa-msg-input {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  min-height: 96px; max-height: 240px;
+  padding: 10px 12px; border-radius: 8px; border: 1.5px solid var(--border);
+  font-family: inherit; font-size: 13px; line-height: 1.5;
+  color: var(--text); background: var(--card); outline: none;
+}
+.wa-msg-input:focus { border-color: var(--accent); }
+.wa-msg-input:disabled { opacity: .7; }
+
+.wa-attach {
+  display: flex; align-items: center; gap: 8px;
+  border: 1.5px solid var(--border); border-radius: 8px;
+  padding: 8px 12px; font-size: 13px; color: var(--text);
+}
+.wa-attach-name {
+  font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wa-attach-size { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.wa-attach-spacer { flex: 1 1 auto; }
+.wa-attach-empty {
+  width: 100%; box-sizing: border-box; cursor: pointer;
+  border: 1.5px dashed var(--border); border-radius: 8px;
+  padding: 10px 12px; font: inherit; font-size: 13px;
+  color: var(--muted); background: none; text-align: center;
+}
+.wa-attach-empty:hover { border-color: var(--accent); color: var(--accent); }
+.wa-attach-empty:disabled { cursor: default; opacity: .6; }
+.wa-hint { color: var(--muted); font-size: 11.5px; margin-top: 6px; }
+.wa-block { margin-bottom: 14px; }
 
 /* ============================================================================
    MISC SMALL UTILITIES (form modal footers, App shell)

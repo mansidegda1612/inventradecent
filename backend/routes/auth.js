@@ -8,7 +8,7 @@ const auth    = require("../middleware/AuthMiddleware");
 const requireRight = require("../middleware/requireRight");
 const requireActiveSubscription = require("../middleware/requireActiveSubscription");
 const { sendMail } = require("../utils/mailer");
-const { computeEffectiveStatus } = require("../utils/subscriptionStatus");
+const { loadAccessContext, subscriptionExpiredResponse } = require("../utils/accessGate");
 const { idsToKeys } = require("../utils/permissionCatalog");
 
 // 10 attempts per 15 minutes per IP — generous enough for real users retyping
@@ -91,27 +91,46 @@ async function loadUserOrgs(userId) {
   return rows;
 }
 
-// So the frontend can show a trial countdown / upgrade banner without a
-// separate round trip — same effective-status logic the
-// requireActiveSubscription middleware enforces with.
-async function loadSubscription(accountId) {
-  const [rows] = await pool.query(
-    `SELECT s.*, p.name AS plan_name, p.max_orgs, p.max_users, p.features
-     FROM subscription s LEFT JOIN plan p ON p.id = s.plan_id
-     WHERE s.account_id = ?`,
-    [accountId]
-  );
-  const sub = rows[0] || null;
+// Every token-minting path needs the same two answers about the account:
+// "is it still paid up?" (to gate the session) and "what should the frontend
+// show?" (trial countdown / renewal pill / lock screen). loadAccessContext
+// answers both from one query, and it's the same helper
+// requireActiveSubscription enforces with, so a session can never be handed
+// out on terms the per-request check then disagrees with.
+async function loadGate(user) {
+  return loadAccessContext({
+    accountId: user.account_id,
+    loginId: user.user_id,
+    email: user.email,
+  });
+}
+
+// The `subscription` object the frontend reads (AuthContext → Header/App).
+function subscriptionPayload(gate) {
   return {
-    status: computeEffectiveStatus(sub),
-    trial_ends_at: sub?.trial_ends_at || null,
-    current_period_end: sub?.current_period_end || null,
+    status: gate.status,
+    trial_ends_at: gate.trialEndsAt,
+    current_period_end: gate.currentPeriodEnd,
     // null when no real plan is attached yet (trial/comped) — unrestricted,
     // same convention as req.ctx.plan in requireActiveSubscription.js.
-    plan: sub?.plan_id
-      ? { name: sub.plan_name, maxOrgs: sub.max_orgs, maxUsers: sub.max_users, features: sub.features || {} }
+    plan: gate.plan
+      ? {
+          name: gate.plan.name, maxOrgs: gate.plan.maxOrgs,
+          maxUsers: gate.plan.maxUsers, features: gate.plan.features || {},
+        }
       : null,
   };
+}
+
+// Extra fields on the session's `user` so the frontend knows which of the two
+// lapsed-account experiences to render. A staff user never sees these — they
+// don't get a session at all once the account is locked (see the gate checks
+// in /auth/login, /auth/me, /auth/switch-org and /auth/refresh-token).
+//
+// billing_only is the server's decision, not something the client derives from
+// the status string, so there's exactly one place the policy lives.
+function sessionFlags(gate) {
+  return { is_owner: gate.isOwner, billing_only: gate.locked && gate.isOwner };
 }
 
 // ── platform admin (the SaaS owner) ─────────────────────────────────────────
@@ -303,7 +322,8 @@ router.post("/auth/signup", authLimiter, async (req, res) => {
     const user = await loadUserWithRole(userId);
     const orgs = await loadUserOrgs(userId);
     const { payload, rights } = await buildOrgContext(user, orgs[0]);
-    const subscription = await loadSubscription(user.account_id);
+    const gate = await loadGate(user);
+    const subscription = subscriptionPayload(gate);
 
     const accessToken  = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
     const refreshToken = jwt.sign({ id: user.id, oid: orgs[0].org_id }, JWT_REFRESH_SECRET, { expiresIn: JWT_REFRESH_EXPIRES });
@@ -330,6 +350,7 @@ router.post("/auth/signup", authLimiter, async (req, res) => {
         user: {
           id: user.id, name: user.name, user_id: user.user_id, email: user.email,
           userrole: payload.role, role_name: orgs[0].role_name, rights, padmin: payload.padmin,
+          ...sessionFlags(gate),
         },
         org: { id: orgs[0].org_id, name: orgs[0].org_name },
         orgs: orgs.map(o => ({ id: o.org_id, name: o.org_name })),
@@ -375,6 +396,14 @@ router.post("/auth/login", authLimiter, async (req, res) => {
     if (!orgs.length)
       return res.status(403).json({ success: false, message: "This user has no organization access. Contact an admin." });
 
+    // Trial over / subscription lapsed → no session for staff. The account
+    // owner still gets one, but a billing-only one (sessionFlags below), since
+    // they're the only person who can actually fix it and they need to reach
+    // Plans & Billing to do it.
+    const gate = await loadGate(user);
+    if (gate.locked && !gate.isOwner)
+      return res.status(403).json(subscriptionExpiredResponse(gate.status));
+
     await pool.query("UPDATE user SET last_login = NOW() WHERE id = ?", [user.id]);
 
     // Default to the first org. If there's more than one, the frontend shows
@@ -395,10 +424,11 @@ router.post("/auth/login", authLimiter, async (req, res) => {
         user: {
           id: user.id, name: user.name, user_id: user.user_id,
           userrole: payload.role, role_name: activeOrg.role_name, rights, padmin: payload.padmin,
+          ...sessionFlags(gate),
         },
         org: { id: activeOrg.org_id, name: activeOrg.org_name },
         orgs: orgs.map(o => ({ id: o.org_id, name: o.org_name })),
-        subscription: await loadSubscription(user.account_id),
+        subscription: subscriptionPayload(gate),
       },
     });
   } catch (e) {
@@ -423,6 +453,14 @@ router.get("/auth/me", auth, async (req, res) => {
     const orgs = await loadUserOrgs(user.id);
     if (!orgs.length)
       return res.status(403).json({ success: false, message: "This user has no organization access. Contact an admin." });
+
+    // Same gate as /auth/login — this is the endpoint the frontend rehydrates
+    // from on every page load, so a staff session that was already open when
+    // the account lapsed is dropped here rather than lingering until its
+    // access token happens to expire.
+    const gate = await loadGate(user);
+    if (gate.locked && !gate.isOwner)
+      return res.status(403).json(subscriptionExpiredResponse(gate.status));
 
     // Prefer the org the current token is scoped to; fall back to the first
     // org for tokens minted before org context existed (forces a one-time
@@ -450,10 +488,11 @@ router.get("/auth/me", auth, async (req, res) => {
           id: user.id, name: user.name, user_id: user.user_id,
           userrole: activeOrg.userrole, role_name: activeOrg.role_name, rights,
           padmin: !!user.is_platform_admin,
+          ...sessionFlags(gate),
         },
         org: { id: activeOrg.org_id, name: activeOrg.org_name },
         orgs: orgs.map(o => ({ id: o.org_id, name: o.org_name })),
-        subscription: await loadSubscription(user.account_id),
+        subscription: subscriptionPayload(gate),
         company: companyRows[0] || null,
       },
     });
@@ -475,6 +514,11 @@ router.post("/auth/switch-org", auth, async (req, res) => {
       return res.status(403).json({ success: false, message: "You do not have access to that organization" });
 
     const user = await loadUserWithRole(req.user.id);
+
+    const gate = await loadGate(user);
+    if (gate.locked && !gate.isOwner)
+      return res.status(403).json(subscriptionExpiredResponse(gate.status));
+
     const { payload, rights } = await buildOrgContext(user, target);
 
     const accessToken  = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
@@ -489,10 +533,11 @@ router.post("/auth/switch-org", auth, async (req, res) => {
         user: {
           id: user.id, name: user.name, user_id: user.user_id,
           userrole: payload.role, role_name: target.role_name, rights, padmin: payload.padmin,
+          ...sessionFlags(gate),
         },
         org: { id: target.org_id, name: target.org_name },
         orgs: orgs.map(o => ({ id: o.org_id, name: o.org_name })),
-        subscription: await loadSubscription(user.account_id),
+        subscription: subscriptionPayload(gate),
       },
     });
   } catch (e) {
@@ -528,6 +573,14 @@ router.post("/auth/refresh-token", async (req, res) => {
     const orgs = await loadUserOrgs(user.id);
     if (!orgs.length)
       return res.status(403).json({ success: false, message: "This user has no organization access. Contact an admin." });
+
+    // Without this, blocking /auth/login would be cosmetic: a staff member who
+    // was signed in when the account lapsed could keep refreshing a valid
+    // access token for up to JWT_REFRESH_EXPIRES (7 days) and never see the
+    // login screen at all.
+    const gate = await loadGate(user);
+    if (gate.locked && !gate.isOwner)
+      return res.status(403).json(subscriptionExpiredResponse(gate.status));
 
     // Keep the same active org the refresh token was minted for; fall back
     // to the first org for refresh tokens issued before org context existed.

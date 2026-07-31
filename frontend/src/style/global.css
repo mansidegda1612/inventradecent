@@ -223,6 +223,13 @@ button {
   background: #92400E; color: #fff; border-radius: 999px; padding: 2px 9px; font-size: 11px;
 }
 
+/* 3 days or fewer — same pill, red instead of amber, so the last stretch of a
+   trial or paid period reads as urgent without a second component. Must stay
+   after the base rules above to win the :hover cascade. */
+.trial-pill-urgent { background: #FEF2F2; border-color: #FECACA; color: #991B1B; }
+.trial-pill-urgent:hover { background: #FEE2E2; }
+.trial-pill-urgent .trial-pill-upgrade { background: #991B1B; }
+
 .account-menu { position: relative; flex-shrink: 0; }
 
 .account-menu-trigger {

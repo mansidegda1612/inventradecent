@@ -8,7 +8,7 @@ import "./style/platform.css";
 
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { setUpgradeRequiredHandler } from "./utils/callserver";
-import { Modal, Btn } from "./components/ui";
+import { Modal, Btn, GlobalLoader } from "./components/ui";
 
 // Layout
 import Sidebar from "./components/layout/Sidebar";
@@ -54,21 +54,87 @@ const PAGE_RIGHTS = {
   "fin-reports": "reports.financial",
 };
 
-// Trial countdown lives in the header now (next to the account menu) since
-// it's informational, not blocking — this banner is reserved for the
-// actually-blocked states, which deserve the full-width warning.
+// Trial and renewal countdowns live in the header (next to the account menu)
+// since they're informational, not blocking. This banner is the safety net for
+// a blocked account that somehow still rendered the full shell — normally a
+// lapsed account gets <SubscriptionLock/> (owner) or no session at all (staff).
 function SubscriptionBanner({ subscription, isPlatformAdmin }) {
   if (!subscription || isPlatformAdmin) return null;
 
   if (["expired", "past_due", "canceled"].includes(subscription.status)) {
     return (
       <div className="sub-banner sub-banner-expired">
-        Your trial has ended. You can still view your existing data, but creating or editing anything is blocked until you upgrade.
+        Your subscription has ended, so access is paused. Renew from Plans &amp; Billing to unlock your data — nothing has been deleted.
       </div>
     );
   }
 
   return null;
+}
+
+// Why the trial/subscription stopped, in the customer's words rather than the
+// enum's. `past_due` specifically means a charge was attempted and failed, so
+// it gets a different ask than a trial that simply ran out.
+const LOCK_COPY = {
+  past_due: {
+    title: "We couldn't process your payment",
+    body: "Your last subscription payment didn't go through, so access is paused. Pick your plan below to settle it and pick up right where you left off.",
+  },
+  canceled: {
+    title: "Your subscription is cancelled",
+    body: "Access is paused because your subscription was cancelled. Choose a plan below to start it up again.",
+  },
+  expired: {
+    title: "Your trial has ended",
+    body: "Access is paused until a plan is active. Choose one below and you're back in immediately.",
+  },
+};
+
+// What the account owner of a lapsed account sees instead of the app: the
+// reason, and the Plans page. Nothing else is reachable — every tenant API
+// route is blocked server-side by requireActiveSubscription while
+// routes/billing.js deliberately stays open, so this is the only screen that
+// could function anyway. Staff users never get here: they're refused a session
+// outright (403 SUBSCRIPTION_EXPIRED from /auth/login).
+function SubscriptionLock() {
+  const { user, logout, subscription, refreshMe } = useAuth();
+  const copy = LOCK_COPY[subscription?.status] || LOCK_COPY.expired;
+
+  // Activation is driven by Razorpay's webhook, which lands a few seconds after
+  // checkout closes — and it's /auth/me that reports the account as unlocked.
+  // Poll while this screen is up so a customer who just paid gets let back in
+  // on their own, instead of sitting on a lock screen guessing at a refresh.
+  // Silent: this is background work the user didn't ask for.
+  useEffect(() => {
+    const timer = setInterval(() => refreshMe({ silent: true }), 15000);
+    return () => clearInterval(timer);
+  }, [refreshMe]);
+
+  return (
+    <div className="sub-lock">
+      <div className="sub-lock-bar">
+        <div className="sub-lock-brand">
+          <span className="login-brand-highlight">Inventra</span>Decent
+        </div>
+        <div className="sub-lock-bar-right">
+          <span className="sub-lock-who">{user?.name}</span>
+          <Btn variant="ghost" onClick={logout}>Sign Out</Btn>
+        </div>
+      </div>
+
+      <div className="sub-lock-body">
+        <div className="sub-lock-card">
+          <h2 className="sub-lock-title">{copy.title}</h2>
+          <p className="sub-lock-text">{copy.body}</p>
+          <p className="sub-lock-reassure">
+            Your data is untouched — products, invoices, ledgers and reports are all exactly as you left them.
+          </p>
+        </div>
+
+        <Plans />
+      </div>
+    </div>
+  );
 }
 
 function AppShell() {
@@ -97,6 +163,12 @@ function AppShell() {
   // no tenant page is reachable, since a console session carries rights: [] and
   // no org for the server to scope anything to.
   if (user.padmin) return <PlatformConsole />;
+
+  // Trial over / subscription lapsed, and this is the account owner — the one
+  // person who can fix it. Locked to billing until they do. `billing_only` is
+  // the server's call (routes/auth.js sessionFlags), not something derived from
+  // the status string here, so the frontend can't drift from enforcement.
+  if (user.billing_only) return <SubscriptionLock />;
 
   function renderPage(page) {
     // Server is still the real gate (every mutating route re-checks via
@@ -172,6 +244,9 @@ export default function App() {
   return (
     <AuthProvider>
       <AppShell />
+      {/* Outside AppShell so it also covers the Login screen, the platform
+          console, and the !ready hydration gap — all of which return early. */}
+      <GlobalLoader />
     </AuthProvider>
   );
 }

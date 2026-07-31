@@ -108,5 +108,10 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server   → http://localhost:${PORT}`);
   console.log(`API Docs → http://localhost:${PORT}/api-docs`);
+  // Trial/subscription expiry reminder emails, once a day. Started after
+  // listen so a scheduler problem can never stop the API from coming up.
+  // Set REMINDER_SCHEDULER=off to run it from an OS cron instead
+  // (scripts/send-subscription-reminders.js).
+  require("./utils/reminderScheduler").startReminderScheduler();
 });
 module.exports = app;
