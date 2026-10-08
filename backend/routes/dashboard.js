@@ -17,28 +17,28 @@ router.get("/dashboard/stats", async (req, res) => {
     );
     // Count distinct sale bills only
     const [[{ totalBills }]] = await pool.query(
-      "SELECT COUNT(*) AS totalBills FROM `transaction` WHERE trans_type = 'SI'"
+      "SELECT COUNT(*) AS totalBills FROM `transaction` WHERE is_cancelled = 0 AND trans_type = 'SI'"
     );
 
     // Today's sales — trans_type 'SI'
     const [[{ todaySales }]] = await pool.query(
       `SELECT COALESCE(SUM(final_amount), 0) AS todaySales
        FROM \`transaction\`
-       WHERE trans_type = 'SI' AND DATE(date) = CURDATE()`
+       WHERE is_cancelled = 0 AND trans_type = 'SI' AND DATE(date) = CURDATE()`
     );
 
     // Today's purchases — trans_type 'PI'
     const [[{ todayPurchases }]] = await pool.query(
       `SELECT COALESCE(SUM(final_amount), 0) AS todayPurchases
        FROM \`transaction\`
-       WHERE trans_type = 'PI' AND DATE(date) = CURDATE()`
+       WHERE is_cancelled = 0 AND trans_type = 'PI' AND DATE(date) = CURDATE()`
     );
 
     // This month's sales
     const [[{ monthSales }]] = await pool.query(
       `SELECT COALESCE(SUM(final_amount), 0) AS monthSales
        FROM \`transaction\`
-       WHERE trans_type = 'SI'
+       WHERE is_cancelled = 0 AND trans_type = 'SI'
          AND MONTH(date) = MONTH(CURDATE())
          AND YEAR(date)  = YEAR(CURDATE())`
     );
@@ -87,7 +87,7 @@ router.get("/dashboard/sales-chart", async (req, res) => {
         `SELECT DATE_FORMAT(date, '%Y-%m') AS label,
                 COALESCE(SUM(final_amount), 0) AS total
          FROM \`transaction\`
-         WHERE trans_type = 'SI'
+         WHERE is_cancelled = 0 AND trans_type = 'SI'
            AND date >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
          GROUP BY label
          ORDER BY label ASC`
@@ -97,7 +97,7 @@ router.get("/dashboard/sales-chart", async (req, res) => {
         `SELECT DATE(date) AS label,
                 COALESCE(SUM(final_amount), 0) AS total
          FROM \`transaction\`
-         WHERE trans_type = 'SI'
+         WHERE is_cancelled = 0 AND trans_type = 'SI'
            AND DATE(date) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
          GROUP BY label
          ORDER BY label ASC`
@@ -120,7 +120,7 @@ router.get("/dashboard/top-products", async (req, res) => {
        FROM transaction_items ti
        JOIN \`transaction\` t  ON ti.transaction_id = t.id
        JOIN product         p  ON ti.product_id     = p.id
-       WHERE t.trans_type = 'SI'
+       WHERE t.is_cancelled = 0 AND t.trans_type = 'SI'
        GROUP BY ti.product_id, p.name
        ORDER BY total_sold DESC
        LIMIT 5`
@@ -140,7 +140,7 @@ router.get("/dashboard/top-customers", async (req, res) => {
               SUM(t.final_amount) AS total_purchase
        FROM \`transaction\` t
        JOIN customer c ON t.customer_id = c.id
-       WHERE t.trans_type = 'SI'
+       WHERE t.is_cancelled = 0 AND t.trans_type = 'SI'
        GROUP BY t.customer_id, c.name
        ORDER BY total_purchase DESC
        LIMIT 5`
@@ -166,7 +166,7 @@ router.get("/dashboard/recent-transactions", async (req, res) => {
        LEFT JOIN customer        c  ON t.customer_id = c.id
        LEFT JOIN cashcustdetail  cd ON cd.transaction_id = t.id
        LEFT JOIN transaction_items ti ON ti.transaction_id = t.id
-       WHERE t.trans_type = 'SI'
+       WHERE t.is_cancelled = 0 AND t.trans_type = 'SI'
        GROUP BY t.id, t.bill_no, t.date, c.name, cd.CustName, t.final_amount
        ORDER BY t.date DESC
        LIMIT 10`

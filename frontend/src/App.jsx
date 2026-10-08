@@ -26,6 +26,7 @@ import SaleEntry from "./pages/SaleEntry";
 import InventoryReports from "./pages/InventoryReports";
 import AccountReports from "./pages/AccountReports";
 import FinancialReports from "./pages/FinancialReports";
+import GSTR1Report from "./pages/GSTR1Report";
 
 const PAGE_LABELS = {
   dashboard: "Dashboard",
@@ -42,6 +43,7 @@ const PAGE_LABELS = {
   "inv-reports": "Inventory Reports",
   "acc-reports": "Account Reports",
   "fin-reports": "Financial Reports",
+  "gstr1": "GSTR-1",
 };
 
 // Right required to view each page — used both to guard direct navigation
@@ -62,6 +64,7 @@ const PAGE_RIGHTS = {
   "inv-reports": "reports.inventory",
   "acc-reports": "reports.account",
   "fin-reports": "reports.financial",
+  "gstr1": "reports.gstr1",
 };
 
 function HamburgerIcon() {
@@ -109,6 +112,7 @@ function AppShell() {
       case "inv-reports": return <InventoryReports />;
       case "acc-reports": return <AccountReports />;
       case "fin-reports": return <FinancialReports />;
+      case "gstr1": return <GSTR1Report />;
       default: return <p className="app-notfound">Page not found.</p>;
     }
   }

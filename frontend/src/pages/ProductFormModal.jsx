@@ -47,8 +47,22 @@ const ProductFormModal = forwardRef(function ProductFormModal({ onSaved }, ref) 
 
   // ── helpers ───────────────────────────────────────────────────────────────
   function emptyForm() {
-    return { name: "", category: 0, barcode: "", gstPer: 5, sale_rate: 0, purc_rate: 0, o_qty: 0, hsn_code: "" ,lowstockqty : 0};
+    return { name: "", category: 0, barcode: "", gstPer: 5, sale_rate: 0, purc_rate: 0, o_qty: 0, hsn_code: "" ,lowstockqty : 0,
+             uqc: "MTR" };
   }
+
+  // GST unit codes, as the GSTR-1 portal spells them. Table 12 reports total
+  // quantity per HSN, so a wrong unit here misstates the return.
+  const UQC_OPTIONS = [
+    { id: "MTR", name: "MTR — Metres" },
+    { id: "PCS", name: "PCS — Pieces" },
+    { id: "KGS", name: "KGS — Kilograms" },
+    { id: "NOS", name: "NOS — Numbers" },
+    { id: "SQM", name: "SQM — Square metres" },
+    { id: "BOX", name: "BOX — Box" },
+    { id: "SET", name: "SET — Set" },
+    { id: "DOZ", name: "DOZ — Dozen" },
+  ];
 
   const show = (msg, type = "success") => {
     setToasts({ open: true, msg, type });
@@ -96,16 +110,29 @@ const ProductFormModal = forwardRef(function ProductFormModal({ onSaved }, ref) 
     if (!form.name) { show("Name is required!", "error"); return; }
     if (!form.barcode) { show("Barcode is required!", "error"); return; }
 
+    // Mirrors validateProductGst() in backend/config/gst.js. Duplicated for
+    // fast feedback only — the backend is the enforcement point, not this.
+    //
+    // HSN and UQC may be left blank: a filing concern should not block routine
+    // stock work. They are still required to FILE, which the GSTR-1 screen's
+    // pre-filing gate enforces (checks B2 and B3). A malformed HSN is rejected
+    // though — that one reaches the portal and gets bounced there.
+    const hsn = String(form.hsn_code || "").trim();
+    if (hsn && !/^(\d{4}|\d{6}|\d{8})$/.test(hsn)) {
+      show("HSN Code must be 4, 6 or 8 digits when provided", "error"); return;
+    }
+
     const model = {
       name: form.name,
       category: form.category,
       purc_rate: parseFloat(form.purc_rate),
       sale_rate: parseFloat(form.sale_rate),
-      hsn_code: form.hsn_code,
+      hsn_code: hsn,
       barcode: form.barcode,
       gstPer: form.gstPer,
       o_qty: parseFloat(form.o_qty),
-      lowstockqty : parseFloat(form.lowstockqty)
+      lowstockqty : parseFloat(form.lowstockqty),
+      uqc: form.uqc || null,
     };
 
     try {
@@ -236,6 +263,7 @@ const ProductFormModal = forwardRef(function ProductFormModal({ onSaved }, ref) 
           <Field label="HSN Code">
             <input
               value={form.hsn_code}
+              placeholder="4, 6 or 8 digits — needed to file GSTR-1"
               onChange={(e) => setForm({ ...form, hsn_code: e.target.value })}
             />
           </Field>
@@ -246,7 +274,16 @@ const ProductFormModal = forwardRef(function ProductFormModal({ onSaved }, ref) 
             />
           </Field>
         </div>
-        <div>
+
+        <div className="form-grid-2">
+          <Field label="Unit (UQC)">
+            <Dropdown
+              value={form.uqc}
+              onChange={(v) => setForm({ ...form, uqc: v })}
+              clearable
+              options={UQC_OPTIONS}
+            />
+          </Field>
           <Field label="Opening Qty">
             <input
               type="number"

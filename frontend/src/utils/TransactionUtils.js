@@ -18,21 +18,37 @@ export function splitGST(gstPercent) {
 const round2 = (n) => parseFloat(((parseFloat(n) || 0)).toFixed(2));
 
 /**
- * Calculate item amounts with GST
+ * Calculate item amounts with GST.
+ *
+ * Two distinct money figures per line, and keeping them apart is the whole
+ * point:
+ *
+ *   item_amount    qty x rate. The line's own value, what prints on the
+ *                  invoice next to the item.
+ *   taxable_amount item_amount after every expense sequenced BEFORE the GST
+ *                  line has been applied to it — the discount, normally. This
+ *                  is the value GST is actually charged on, and the "taxable
+ *                  value" GSTR-1 reports.
+ *
+ * A discount given at the time of supply reduces the value of the supply, so
+ * tax is due on the reduced figure, not the sticker price. Charging GST on
+ * item_amount and then deducting the discount afterwards would overstate tax
+ * and leave the invoice unreconcilable.
+ *
  * @param {Object} item - Item with qty, rate, cgst_pct, sgst_pct
  * @param {boolean} isGSTBill - Whether GST should be charged at all
- * @param {number} gstFactor - Scales the taxable amount before GST is charged
- *        on it, so tax lands on the amount left after every expense that comes
- *        BEFORE the GST line in the sequence (e.g. discount). 1 = tax on the
- *        full item amount. See calcGSTFactor().
- * @returns {Object} - taxable_amount, gst_base, CGST, SGST
+ * @param {number} gstFactor - Ratio of the post-pre-GST-expense total to the
+ *        raw item total, used to apportion those expenses across lines so the
+ *        line taxable amounts still sum to the bill's. 1 = nothing sits before
+ *        GST. See calcGSTFactor().
+ * @returns {Object} - item_amount, taxable_amount, CGST, SGST
  */
 export function calcItemAmounts(item, isGSTBill = true, gstFactor = 1) {
-  const taxable_amount = round2((item.qty || 0) * (item.rate || 0));
-  const gst_base = round2(taxable_amount * gstFactor);
-  const CGST = isGSTBill ? round2((gst_base * (item.cgst_pct || 0)) / 100) : 0;
-  const SGST = isGSTBill ? round2((gst_base * (item.sgst_pct || 0)) / 100) : 0;
-  return { taxable_amount, gst_base, CGST, SGST };
+  const item_amount = round2((item.qty || 0) * (item.rate || 0));
+  const taxable_amount = round2(item_amount * gstFactor);
+  const CGST = isGSTBill ? round2((taxable_amount * (item.cgst_pct || 0)) / 100) : 0;
+  const SGST = isGSTBill ? round2((taxable_amount * (item.sgst_pct || 0)) / 100) : 0;
+  return { item_amount, taxable_amount, CGST, SGST };
 }
 
 /**
@@ -96,7 +112,12 @@ export function expenseSequence(expenses = []) {
 
 /**
  * Walk the expense sequence and resolve each line against its own base.
- * @param {Array} items - items with taxable_amount
+ *
+ * The sequence always starts from the ITEM total, never the taxable total.
+ * Summing taxable_amount here would apply the discount to an amount the
+ * discount had already been taken out of — deducting it twice.
+ *
+ * @param {Array} items - items with item_amount (qty x rate)
  * @param {Array} expenses
  * @param {number} totalGST - what the "gst" line contributes. Pass 0 to resolve
  *        the pre-GST lines (the GST base only depends on those anyway).
@@ -107,7 +128,14 @@ export function expenseSequence(expenses = []) {
  */
 export function resolveExpenseSequence(items = [], expenses = [], totalGST = 0) {
   const subtotal = round2(
-    items.reduce((s, i) => s + (parseFloat(i.taxable_amount) || 0), 0)
+    items.reduce(
+      (s, i) =>
+        s +
+        (i.item_amount != null
+          ? parseFloat(i.item_amount) || 0
+          : round2((i.qty || 0) * (i.rate || 0))),
+      0
+    )
   );
   const resolved = expenses.map((exp) => ({ ...exp }));
   let running = subtotal;
@@ -152,15 +180,16 @@ export function calcGSTFactor(items = [], expenses = []) {
  * @param {Array} expenses - Array of expenses with seq, sign, amount
  * @param {boolean} isGSTBill - Whether GST should be included
  * @returns {Object} - All calculated totals, plus:
- *   items    — the same items with taxable_amount/gst_base/CGST/SGST recomputed
- *              for this expense sequence (use THESE for saving & printing)
+ *   items    — the same items with item_amount/taxable_amount/CGST/SGST
+ *              recomputed for this expense sequence (use THESE for saving &
+ *              printing)
  *   expenses — the resolved expense lines (see resolveExpenseSequence)
  */
 export function calcTotals(items = [], expenses = [], isGSTBill = true) {
-  // taxable amount per line first — the pre-GST expenses are calculated on it
+  // item amount per line first — the pre-GST expenses are calculated on it
   const baseItems = items.map((i) => ({
     ...i,
-    taxable_amount: round2((i.qty || 0) * (i.rate || 0)),
+    item_amount: round2((i.qty || 0) * (i.rate || 0)),
   }));
 
   const gstFactor = isGSTBill ? calcGSTFactor(baseItems, expenses) : 1;
@@ -194,6 +223,10 @@ export function calcTotals(items = [], expenses = [], isGSTBill = true) {
     subtotal,
     gstFactor,
     items:        taxedItems,
+    // Sum of the per-line taxable amounts — the value GST was charged on, and
+    // what goes on the bill header. Differs from `subtotal` (the item total)
+    // by whatever sits before GST in the sequence.
+    totalTaxable: round2(taxedItems.reduce((s, i) => s + (i.taxable_amount || 0), 0)),
     totalCGST,
     totalSGST,
     totalGST,

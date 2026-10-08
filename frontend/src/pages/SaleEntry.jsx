@@ -155,10 +155,11 @@ export default function SaleEntry() {
 
     const rawItems = (d.items ?? []).map((i) => ({
       ...i,
+      // item_amount drives the expense sequence; taxable_amount is already the
+      // post-discount base GST was charged on. Older rows have only the latter.
+      item_amount: parseFloat(i.item_amount ?? i.taxable_amount) || 0,
       taxable_amount: parseFloat(i.taxable_amount) || 0,
     }));
-    // GST was charged on the post-discount base when this bill was saved, so
-    // the stored CGST/SGST must be read back against that same base.
     const gstFactor = isgstbill ? calcGSTFactor(rawItems, expenses) : 1;
 
     let obj = {
@@ -176,10 +177,12 @@ export default function SaleEntry() {
         // Look up the original product to get its GST percentages
         const gst = splitGST(i?.gstPer || 0);
 
-        // If it was a GST bill, derive pct from stored amounts (as before) —
-        // against the base GST was actually charged on, not the gross amount.
-        // If non-GST bill, use master product percentages so toggling works
-        const gstBase = i.taxable_amount * gstFactor;
+        // Derive the rate from what was stored. taxable_amount IS the base GST
+        // was charged on, so gstFactor must NOT be applied again here — doing
+        // so would divide by an already-discounted figure a second time and
+        // inflate the rate. For a non-GST bill fall back to the product master
+        // so toggling the GST switch still works.
+        const gstBase = i.taxable_amount;
         const cgst_pct = isgstbill && gstBase
           ? (parseFloat(i.CGST) / gstBase) * 100
           : gst.cgst;
@@ -303,6 +306,11 @@ export default function SaleEntry() {
         product_id: i.product_id,
         qty: parseFloat(i.qty),
         rate: parseFloat(i.rate),
+        // Both figures travel. item_amount is qty x rate; taxable_amount is
+        // what is left after the pre-GST expenses and is what CGST/SGST were
+        // charged on. Sending only the first is what made the server recompute
+        // tax against the undiscounted amount and reject the bill.
+        item_amount: parseFloat(i.item_amount),
         taxable_amount: parseFloat(i.taxable_amount),
         CGST: parseFloat(i.CGST),
         SGST: parseFloat(i.SGST),

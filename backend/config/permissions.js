@@ -60,6 +60,7 @@ module.exports = [
     { key: "reports.inventory", label: "Inventory Reports" },
     { key: "reports.account", label: "Account Reports" },
     { key: "reports.financial", label: "Financial Reports" },
+    { key: "reports.gstr1", label: "GSTR-1" },
   ]},
   { module: "users", label: "User Management", actions: [
     { key: "users.view", label: "View" },

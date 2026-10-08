@@ -40,6 +40,7 @@ app.use("/api/",  require("./routes/balanceSheet"));
 app.use("/api/" , require("./routes/whatsappRoutes"));
 app.use("/api/", require("./routes/permissions"));
 app.use("/api/", require("./routes/company"));
+app.use("/api/", require("./routes/gstr1"));
 app.use("/api/", require("./routes/whatsapp"));
  app.use(express.json({
        verify: (req) => req.originalUrl.startsWith("/api/whatsapp/send-media"),

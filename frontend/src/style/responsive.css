@@ -1200,3 +1200,271 @@
   .u-modal-footer-actions { flex-wrap: wrap; }
   .u-modal-footer-actions .ui-btn { flex: 1; justify-content: center; }
 }
+/* ─── GSTR-1 REPORT ────────────────────────────────────────────────────────── */
+
+.g1-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Period selection.
+   Carries .ui-card's own look but is NOT a .ui-card, because that sets
+   overflow:hidden and would slice an open Dropdown panel off at the card's
+   bottom edge. position + z-index give the bar a stacking context above the
+   sections that follow, so the panel opens OVER them instead of under. */
+.g1-periodbar {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+  padding: 12px 18px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.03);
+}
+
+.g1-periodbar-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sub, #374151);
+  opacity: 0.7;
+}
+
+.g1-period-pickers {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* The resolved range, pushed to the far end — what the selection above
+   actually produced, including the fp the JSON will declare. */
+.g1-periodbar-range {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text, #111827);
+  text-align: right;
+}
+
+.g1-periodbar-range em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--sub, #374151);
+  opacity: 0.65;
+}
+
+@media (max-width: 760px) {
+  .g1-periodbar { gap: 10px; }
+  .g1-periodbar-range { margin-left: 0; align-items: flex-start; text-align: left; }
+  .g1-period-pickers { width: 100%; }
+}
+
+/* Pre-filing gate */
+.g1-gate-summary { font-size: 13px; font-weight: 600; }
+
+.g1-gate-msg {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.g1-checks { display: flex; flex-direction: column; gap: 2px; }
+
+.g1-check {
+  display: grid;
+  grid-template-columns: 62px minmax(180px, 1fr) 2fr;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-light, #EEF1F8);
+  font-size: 13px;
+}
+.g1-check:last-child { border-bottom: none; }
+
+.g1-check-pill {
+  display: inline-block;
+  text-align: center;
+  padding: 2px 0;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.g1-check-name { font-weight: 500; color: var(--text, #111827); }
+.g1-check-detail { color: var(--sub, #374151); opacity: 0.75; }
+
+.g1-force { margin-top: 14px; }
+
+/* Banners */
+.g1-banner {
+  padding: 11px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 16px;
+  border: 1px solid transparent;
+}
+.g1-banner-warn { background: #FFFBEB; border-color: #FDE68A; color: #92400E; }
+.g1-banner-info { background: #EFF6FF; border-color: #BFDBFE; color: #1E40AF; }
+
+.g1-error { color: #EF4444; font-size: 13px; margin: 12px 0; }
+
+/* Headline stats */
+.g1-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.g1-stat {
+  background: var(--card, #fff);
+  border: 1px solid var(--border, #E2E6EF);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.g1-stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--sub, #374151);
+  opacity: 0.65;
+}
+
+.g1-stat-value { font-size: 19px; font-weight: 650; color: var(--text, #111827); }
+
+/* Sections */
+.g1-note {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--sub, #374151);
+  opacity: 0.7;
+}
+
+.g1-rowcount { font-size: 12px; color: var(--sub, #374151); opacity: 0.6; }
+
+/* "Showing 100 of 4,312" — a rendering cap only; the downloads carry every row. */
+.g1-more {
+  margin-top: 10px;
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--accent, #2563EB);
+  background: none;
+  border: 1px solid var(--border, #E5E7EB);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.g1-more:hover { background: var(--hover, #F9FAFB); }
+
+.g1-empty {
+  margin: 0;
+  padding: 14px 0;
+  font-size: 13px;
+  color: var(--sub, #374151);
+  opacity: 0.6;
+}
+
+.g1-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+.g1-table th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--sub, #374151);
+  opacity: 0.7;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border, #E2E6EF);
+  white-space: nowrap;
+}
+
+.g1-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border-light, #EEF1F8);
+  color: var(--text, #111827);
+}
+
+.g1-table tbody tr:last-child td { border-bottom: none; }
+
+/* Money and quantities line up on the decimal only when right-aligned and
+   tabular — mixed-width digits make column scanning unreliable otherwise. */
+.g1-num {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.g1-total-row td {
+  border-top: 2px solid var(--border, #E2E6EF);
+  border-bottom: none;
+  font-weight: 650;
+  padding-top: 10px;
+}
+
+.g1-missing { color: #EF4444; font-style: italic; font-size: 12px; }
+
+/* Filing modal */
+.g1-modal-warn {
+  margin: 0 0 16px;
+  padding: 11px 13px;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: 7px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #92400E;
+}
+
+.g1-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.g1-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #111827;
+  color: #fff;
+  padding: 11px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  z-index: 9999;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+
+@media (max-width: 640px) {
+  .g1-check {
+    grid-template-columns: 56px 1fr;
+    row-gap: 2px;
+  }
+  .g1-check-detail { grid-column: 2; }
+  .g1-actions { width: 100%; }
+}

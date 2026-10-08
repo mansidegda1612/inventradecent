@@ -546,6 +546,13 @@ function buildInvoicePageHTML(data, type, company) {
   const partyLabel = isSale ? "Customer Detail" : "Supplier Detail";
 
   // ── Totals ────────────────────────────────────────────────────────────────
+  // The line's own value (qty x rate) — what the Amount column shows. Distinct
+  // from taxable_amount, which is net of the discount and is what tax was
+  // charged on. Falls back for rows saved before the two were separated.
+  const amountOf = (i) =>
+    parseFloat(i.item_amount != null ? i.item_amount : i.taxable_amount || 0);
+
+  const itemsTotal = (data.items || []).reduce((s, i) => s + amountOf(i), 0);
   const taxableTotal = (data.items || []).reduce((s, i) => s + parseFloat(i.taxable_amount || 0), 0);
   const cgstTotal = (data.items || []).reduce((s, i) => s + parseFloat(i.CGST || 0), 0);
   const sgstTotal = (data.items || []).reduce((s, i) => s + parseFloat(i.SGST || 0), 0);
@@ -556,7 +563,7 @@ function buildInvoicePageHTML(data, type, company) {
   // ── Items rows ────────────────────────────────────────────────────────────
   const MIN_ROWS = 8;
   const itemRows = (data.items || []).map((item, idx) => {
-    const total = parseFloat(item.taxable_amount || 0)
+    const total = amountOf(item)
       + parseFloat(item.CGST || 0)
       + parseFloat(item.SGST || 0);
     return `
@@ -566,7 +573,7 @@ function buildInvoicePageHTML(data, type, company) {
       <td class="tr">${escapeHtml(item.hsn_code)}</td>
       <td class="tr">${item.qty}</td>
       <td class="tr">${fmt2(item.rate)}</td>
-      <td class="tr">${fmt2(item.taxable_amount)}</td>
+      <td class="tr">${fmt2(amountOf(item))}</td>
       ${isGST ? `
       <td class="tr">${fmt2(item.cgst_pct)}%</td>
       <td class="tr">${fmt2(item.CGST)}</td>
@@ -698,7 +705,7 @@ function buildInvoicePageHTML(data, type, company) {
         <td></td>
         <td class="tr">${(data.items || []).reduce((s, i) => s + parseFloat(i.qty || 0), 0)}</td>
         <td></td>
-        <td class="tr">${fmt2(taxableTotal)}</td>
+        <td class="tr">${fmt2(itemsTotal)}</td>
         ${isGST ? `
         <td></td>
         <td class="tr">${fmt2(cgstTotal)}</td>
@@ -707,11 +714,7 @@ function buildInvoicePageHTML(data, type, company) {
         ` : ""}
         <td class="tr">${fmt2(
     (data.items || []).reduce(
-      (s, i) =>
-        s +
-        parseFloat(i.taxable_amount || 0) +
-        parseFloat(i.CGST || 0) +
-        parseFloat(i.SGST || 0),
+      (s, i) => s + amountOf(i) + parseFloat(i.CGST || 0) + parseFloat(i.SGST || 0),
       0
     )
   )}</td>

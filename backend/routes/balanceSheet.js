@@ -63,7 +63,7 @@ router.get("/reports/financial", async (req, res) => {
         COALESCE(SUM(ti.SGST),0)          AS sgst
       FROM \`transaction\` t
       LEFT JOIN transaction_items ti ON ti.transaction_id = t.id
-      WHERE t.trans_type = 'SI'
+      WHERE t.is_cancelled = 0 AND t.trans_type = 'SI'
       ${dateWhere()}
     `);
 
@@ -78,7 +78,7 @@ router.get("/reports/financial", async (req, res) => {
         COALESCE(SUM(ti.SGST),0)          AS sgst
       FROM \`transaction\` t
       LEFT JOIN transaction_items ti ON ti.transaction_id = t.id
-      WHERE t.trans_type = 'PI'
+      WHERE t.is_cancelled = 0 AND t.trans_type = 'PI'
       ${dateWhere()}
     `);
 
@@ -86,7 +86,7 @@ router.get("/reports/financial", async (req, res) => {
     const [cashSalesRows] = await pool.query(`
       SELECT COALESCE(SUM(final_amount),0) AS cash_sales
       FROM \`transaction\` t
-      WHERE trans_type = 'SI' AND cash_debit = 'C'
+      WHERE is_cancelled = 0 AND trans_type = 'SI' AND cash_debit = 'C'
       ${dateWhere()}
     `);
 
@@ -118,8 +118,8 @@ router.get("/reports/financial", async (req, res) => {
     const [monthlyRows] = await pool.query(`
       SELECT
         DATE_FORMAT(t.date,'%Y-%m')         AS month,
-        SUM(CASE WHEN t.trans_type='SI' THEN t.final_amount ELSE 0 END) AS sales,
-        SUM(CASE WHEN t.trans_type='PI' THEN t.final_amount ELSE 0 END) AS purchases
+        SUM(CASE WHEN t.trans_type='SI' AND t.is_cancelled = 0 THEN t.final_amount ELSE 0 END) AS sales,
+        SUM(CASE WHEN t.trans_type='PI' AND t.is_cancelled = 0 THEN t.final_amount ELSE 0 END) AS purchases
       FROM \`transaction\` t
       ${monthFilter}
       GROUP BY DATE_FORMAT(t.date,'%Y-%m')
@@ -135,7 +135,7 @@ router.get("/reports/financial", async (req, res) => {
       FROM transaction_items ti
       JOIN \`transaction\` t ON t.id = ti.transaction_id
       JOIN product p         ON p.id = ti.product_id
-      WHERE t.trans_type = 'SI'
+      WHERE t.is_cancelled = 0 AND t.trans_type = 'SI'
       ${dateWhere()}
       GROUP BY p.id, p.name
       ORDER BY total_value DESC
@@ -153,7 +153,7 @@ router.get("/reports/financial", async (req, res) => {
         COUNT(t.id)                     AS bill_count
       FROM \`transaction\` t
       JOIN customer c ON c.id = t.customer_id
-      WHERE t.trans_type = 'SI' AND t.cash_debit = 'D'
+      WHERE t.is_cancelled = 0 AND t.trans_type = 'SI' AND t.cash_debit = 'D'
       ${dateWhere()}
       GROUP BY t.customer_id, c.name
       ORDER BY total_value DESC
@@ -167,7 +167,7 @@ router.get("/reports/financial", async (req, res) => {
         COUNT(t.id)                      AS bill_count
       FROM \`transaction\` t
       LEFT JOIN cashcustdetail cd ON cd.transaction_id = t.id
-      WHERE t.trans_type = 'SI' AND t.cash_debit = 'C'
+      WHERE t.is_cancelled = 0 AND t.trans_type = 'SI' AND t.cash_debit = 'C'
       ${dateWhere()}
       GROUP BY cd.CustName
       ORDER BY total_value DESC

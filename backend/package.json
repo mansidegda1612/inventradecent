@@ -5,7 +5,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "swagger": "node swagger.js"
+    "swagger": "node swagger.js",
+    "test": "node tests/gst.test.js && node tests/gstr1.test.js && node tests/gstr1.portal.test.js && node tests/discount.e2e.test.js",
+    "test:smoke": "node tests/gstr1.smoke.js"
   },
   "dependencies": {
     "axios": "^1.18.1",

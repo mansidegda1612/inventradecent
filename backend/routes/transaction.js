@@ -1,6 +1,12 @@
 const router = require("express").Router();
 const pool = require("../config/db");
 const auth = require("../middleware/AuthMiddleware");
+const {
+  getHomeState,
+  resolvePlaceOfSupply,
+  resolveLineTax,
+  assertPeriodOpen,
+} = require("../config/gst");
 
 router.use(auth);
 
@@ -26,7 +32,10 @@ router.get("/transactions/", async (req, res) => {
   const offset = usePagination ? (pageNum - 1) * limitNum : 0;
 
   try {
-    let where = "WHERE 1=1";
+    // Cancelled bills keep their row so the invoice number stays consumed for
+    // GSTR-1 Table 13, but they are not live documents — everything outside
+    // the GST report path filters them out.
+    let where = "WHERE t.is_cancelled = 0";
     const params = [];
 
     if (search) {
@@ -114,7 +123,7 @@ router.get("/transactions/", async (req, res) => {
           },
     });
   } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
+    res.status(e.status || 500).json({ success: false, message: e.message });
   }
 });
 
@@ -138,7 +147,7 @@ router.get("/transactions/next-bill-no", async (req, res) => {
     }
     res.json({ success: true, data: { bill_no: nextNo } });
   } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
+    res.status(e.status || 500).json({ success: false, message: e.message });
   }
 });
 
@@ -178,7 +187,7 @@ router.get("/transactions/pending-bills", async (req, res) => {
          ), 0) AS adjusted_amount
        FROM \`transaction\` t
        LEFT JOIN transaction_adjustments ta ON ta.bill_transaction_id = t.id
-       WHERE t.customer_id = ? AND t.trans_type = ?
+       WHERE t.customer_id = ? AND t.trans_type = ? AND t.is_cancelled = 0
        GROUP BY t.id
        HAVING (t.final_amount - adjusted_amount) > 0.01
        ORDER BY t.date ASC`,
@@ -192,7 +201,7 @@ router.get("/transactions/pending-bills", async (req, res) => {
 
     res.json({ success: true, data });
   } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
+    res.status(e.status || 500).json({ success: false, message: e.message });
   }
 });
 
@@ -259,7 +268,7 @@ router.get("/transactions/:transaction_id", async (req, res) => {
       data: { ...master[0], items, adjustments },
     });
   } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
+    res.status(e.status || 500).json({ success: false, message: e.message });
   }
 });
 
@@ -381,7 +390,7 @@ router.post("/transactions/", async (req, res) => {
     } catch (e) {
       await conn.rollback();
       conn.release();
-      return res.status(500).json({ success: false, message: e.message });
+      return res.status(e.status || 500).json({ success: false, message: e.message });
     }
   }
 
@@ -391,6 +400,7 @@ router.post("/transactions/", async (req, res) => {
   const {
     cash_debit = "D",
     bill_no, date, customer_id, customer_name_cash, isGSTBill,
+    place_of_supply: pos_override,
     expenses,
     final_amount, items,
   } = req.body;
@@ -404,28 +414,65 @@ router.post("/transactions/", async (req, res) => {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+
+    const bill_date = date || new Date();
+
+    // Refuse to date a new bill into an already-filed period — that has to be
+    // a Table 10 amendment, not an insert.
+    await assertPeriodOpen(conn, { newDate: bill_date });
+
+    // Place of supply, and therefore the tax head, is decided here and never
+    // taken from the client.
+    const homeState      = await getHomeState(conn);
+    const placeOfSupply  = await resolvePlaceOfSupply({ conn, customer_id, override: pos_override });
+    const isInterState   = placeOfSupply !== homeState;
+
+    // Product rates are read once, up front, so every line in this bill is
+    // priced off one consistent snapshot of the product master.
+    const productIds = [...new Set(items.map((i) => i.product_id).filter(Boolean))];
+    const [prodRows] = productIds.length
+      ? await conn.query("SELECT id, gstPer FROM product WHERE id IN (?)", [productIds])
+      : [[]];
+    const gstPerById = new Map(prodRows.map((p) => [p.id, p.gstPer]));
+
+    const resolvedItems = items.map((item) =>
+      resolveLineTax(item, {
+        isGSTBill,
+        productGstPer: gstPerById.get(item.product_id),
+        isInterState,
+      })
+    );
+
     const exp = {};
     for (const item of expenses) {
       exp[item.key] = item.amount;
     }
     // ── Compute totals from items (source of truth) ──────────────────────────
-    const taxable_total = items.reduce((s, i) => s + (parseFloat(i.taxable_amount) || 0), 0);
+    // Tax now comes off the server-resolved lines, not the client payload, so
+    // an inter-state bill totals its IGST instead of silently summing zeroes.
+    //
+    // taxable_total is the sum of the per-line taxable amounts, i.e. already
+    // net of the discount and anything else sequenced before GST. The fallback
+    // below must therefore NOT subtract the discount again — only the lines
+    // that come after GST (roundoff) are still outstanding.
+    const taxable_total = resolvedItems.reduce((s, i) => s + i.taxable_amount, 0);
     const final_total = parseFloat(final_amount) ||
       (taxable_total
-        + items.reduce((s, i) => s + (parseFloat(i.CGST) || 0) + (parseFloat(i.SGST) || 0), 0)
-        - parseFloat(exp.discount)
-        + parseFloat(exp.roundoff));
+        + resolvedItems.reduce((s, i) => s + i.CGST + i.SGST + i.IGST + i.cess, 0)
+        + parseFloat(exp.roundoff || 0));
 
     // ── Insert master ─────────────────────────────────────────────────────────
     const [masterResult] = await conn.query(
       `INSERT INTO \`transaction\`
          (trans_type, cash_debit, date, bill_no, isGSTBill,customer_id,
+          place_of_supply,
           taxable_amount, ROUNDOFF, discount, final_amount,
           userid, creation_date, updation_date)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,NOW(),NOW())`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NOW(),NOW())`,
       [
         trans_type, cash_debit,
-        date || new Date(), bill_no, isGSTBill, customer_id,
+        bill_date, bill_no, isGSTBill, customer_id,
+        placeOfSupply,
         taxable_total, exp.roundoff, exp.discount, final_total,
         req.user.id,
       ]
@@ -444,22 +491,21 @@ router.post("/transactions/", async (req, res) => {
 
 
     // ── Insert line items + update stock ──────────────────────────────────────
-    for (const item of items) {
-      const {
-        product_id,
-        qty = 0,
-        rate = 0,
-        taxable_amount = 0,
-        CGST = 0,
-        SGST = 0,
-      } = item;
+    for (const [idx, item] of items.entries()) {
+      const { product_id, qty = 0, rate = 0 } = item;
+      const tax = resolvedItems[idx];
 
+      // gst_rate and gst_base are written here and never recomputed. This is
+      // the line that keeps a later edit to product.gstPer from re-rating an
+      // already-filed invoice.
       await conn.query(
         `INSERT INTO transaction_items
-           (transaction_id, product_id, qty, rate, taxable_amount, CGST, SGST,
+           (transaction_id, product_id, qty, rate, taxable_amount,
+            item_amount, gst_rate, CGST, SGST, IGST, cess,
             creation_date, updation_date)
-         VALUES (?,?,?,?,?,?,?,NOW(),NOW())`,
-        [transaction_id, product_id, qty, rate, taxable_amount, CGST, SGST]
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,NOW(),NOW())`,
+        [transaction_id, product_id, qty, rate, tax.taxable_amount,
+         tax.item_amount, tax.gst_rate, tax.CGST, tax.SGST, tax.IGST, tax.cess]
       );
 
       // Stock: sale = reduce c_qty, purchase = increase c_qty
@@ -503,7 +549,7 @@ router.post("/transactions/", async (req, res) => {
   } catch (e) {
     await conn.rollback();
     conn.release();
-    res.status(500).json({ success: false, message: e.message });
+    res.status(e.status || 500).json({ success: false, message: e.message });
   }
 });
 
@@ -553,6 +599,10 @@ router.put("/transactions/:transaction_id", async (req, res) => {
         return res.status(404).json({ success: false, message: "Voucher not found" });
       }
       const old = oldMaster[0];
+
+      // Receipt vouchers are themselves a GSTR-1 Table 13 document series, so
+      // a filed period locks them the same way it locks an invoice.
+      await assertPeriodOpen(conn, { existingRow: old, newDate: date || undefined });
 
       // Reverse old ledger effect (mirror image of the apply logic below)
       if (old.trans_type === "CR") {
@@ -627,7 +677,7 @@ router.put("/transactions/:transaction_id", async (req, res) => {
     } catch (e) {
       await conn.rollback();
       conn.release();
-      return res.status(500).json({ success: false, message: e.message });
+      return res.status(e.status || 500).json({ success: false, message: e.message });
     }
   }
 
@@ -637,6 +687,7 @@ router.put("/transactions/:transaction_id", async (req, res) => {
   const {
     cash_debit = "D",
     bill_no, date, customer_id, customer_name_cash, isGSTBill,
+    place_of_supply: pos_override,
     expenses,
     final_amount, items,
   } = req.body;
@@ -660,6 +711,30 @@ router.put("/transactions/:transaction_id", async (req, res) => {
       return res.status(404).json({ success: false, message: "Transaction not found" });
     }
     const old = oldMaster[0];
+
+    const bill_date = date || new Date();
+
+    // Both directions of the amendment boundary: the row must not already be
+    // filed, and it must not be re-dated into a period that has been.
+    await assertPeriodOpen(conn, { existingRow: old, newDate: bill_date });
+
+    const homeState     = await getHomeState(conn);
+    const placeOfSupply = await resolvePlaceOfSupply({ conn, customer_id, override: pos_override });
+    const isInterState  = placeOfSupply !== homeState;
+
+    const productIds = [...new Set(items.map((i) => i.product_id).filter(Boolean))];
+    const [prodRows] = productIds.length
+      ? await conn.query("SELECT id, gstPer FROM product WHERE id IN (?)", [productIds])
+      : [[]];
+    const gstPerById = new Map(prodRows.map((p) => [p.id, p.gstPer]));
+
+    const resolvedItems = items.map((item) =>
+      resolveLineTax(item, {
+        isGSTBill,
+        productGstPer: gstPerById.get(item.product_id),
+        isInterState,
+      })
+    );
 
     // ── Reverse old stock ─────────────────────────────────────────────────────
     const [oldItems] = await conn.query(
@@ -701,12 +776,12 @@ router.put("/transactions/:transaction_id", async (req, res) => {
     }
 
     // ── Compute new totals ────────────────────────────────────────────────────
-    const taxable_total = items.reduce((s, i) => s + (parseFloat(i.taxable_amount) || 0), 0);
+    // taxable_total is already net of the discount — see the POST branch.
+    const taxable_total = resolvedItems.reduce((s, i) => s + i.taxable_amount, 0);
     const final_total = parseFloat(final_amount) ||
       (taxable_total
-        + items.reduce((s, i) => s + (parseFloat(i.CGST) || 0) + (parseFloat(i.SGST) || 0), 0)
-        - parseFloat(exp.discount)
-        + parseFloat(exp.roundoff));
+        + resolvedItems.reduce((s, i) => s + i.CGST + i.SGST + i.IGST + i.cess, 0)
+        + parseFloat(exp.roundoff || 0));
 
     // ── Update master ─────────────────────────────────────────────────────────
     await conn.query(
@@ -717,6 +792,7 @@ router.put("/transactions/:transaction_id", async (req, res) => {
          bill_no        = ?,
          isGSTBill      = ?,
          customer_id    = ?,
+         place_of_supply = ?,
          taxable_amount = ?,
          ROUNDOFF       = ?,
          discount       = ?,
@@ -726,7 +802,8 @@ router.put("/transactions/:transaction_id", async (req, res) => {
        WHERE id = ?`,
       [
         trans_type, cash_debit,
-        date || new Date(), bill_no, isGSTBill, customer_id,
+        bill_date, bill_no, isGSTBill, customer_id,
+        placeOfSupply,
         taxable_total, exp.roundoff, exp.discount, final_total,
         req.user.id, tid,
       ]
@@ -743,22 +820,18 @@ router.put("/transactions/:transaction_id", async (req, res) => {
     );
 
     // ── Insert new line items + update stock ──────────────────────────────────
-    for (const item of items) {
-      const {
-        product_id,
-        qty = 0,
-        rate = 0,
-        taxable_amount = 0,
-        CGST = 0,
-        SGST = 0,
-      } = item;
+    for (const [idx, item] of items.entries()) {
+      const { product_id, qty = 0, rate = 0 } = item;
+      const tax = resolvedItems[idx];
 
       await conn.query(
         `INSERT INTO transaction_items
-           (transaction_id, product_id, qty, rate, taxable_amount, CGST, SGST,
+           (transaction_id, product_id, qty, rate, taxable_amount,
+            item_amount, gst_rate, CGST, SGST, IGST, cess,
             creation_date, updation_date)
-         VALUES (?,?,?,?,?,?,?,NOW(),NOW())`,
-        [tid, product_id, qty, rate, taxable_amount, CGST, SGST]
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,NOW(),NOW())`,
+        [tid, product_id, qty, rate, tax.taxable_amount,
+         tax.item_amount, tax.gst_rate, tax.CGST, tax.SGST, tax.IGST, tax.cess]
       );
 
       if (trans_type === "SI") {
@@ -795,7 +868,7 @@ router.put("/transactions/:transaction_id", async (req, res) => {
   } catch (e) {
     await conn.rollback();
     conn.release();
-    res.status(500).json({ success: false, message: e.message });
+    res.status(e.status || 500).json({ success: false, message: e.message });
   }
 });
 
@@ -821,6 +894,15 @@ router.delete("/transactions/:transaction_id", async (req, res) => {
       return res.status(404).json({ success: false, message: "Transaction not found" });
     }
     const master = masterRows[0];
+
+    // A document that went out in a filed return cannot be withdrawn by
+    // deleting it — that is a Table 10 amendment.
+    await assertPeriodOpen(conn, { existingRow: master });
+
+    if (master.is_cancelled) {
+      conn.release();
+      return res.status(409).json({ success: false, message: "Transaction is already cancelled" });
+    }
 
     // Fetch items for stock reversal (empty for CR/CP — fine)
     const [items] = await conn.query(
@@ -867,20 +949,34 @@ router.delete("/transactions/:transaction_id", async (req, res) => {
       );
     }
 
-    // Delete items first (FK), then master.
-    // transaction_adjustments rows (for CR/CP) clean up automatically via
-    // ON DELETE CASCADE on voucher_transaction_id — no manual delete needed.
-    await conn.query("DELETE FROM transaction_items WHERE transaction_id = ?", [tid]);
-    await conn.query("DELETE FROM cashcustdetail WHERE transaction_id = ?", [tid]);
-    await conn.query("DELETE FROM `transaction` WHERE id = ?", [tid]);
+    // ── Soft cancel, NOT delete ───────────────────────────────────────────────
+    // Stock and ledger are reversed exactly as before, but the row survives.
+    //
+    // GSTR-1 Table 13 reports, per series, the invoice numbers issued AND how
+    // many were cancelled. A hard delete destroys the from-no/to-no continuity
+    // and makes a cancelled invoice indistinguishable from one that was never
+    // raised — which reads as suppressed turnover. The number stays consumed
+    // and can never be reissued (Stage 3A.1 keeps cancelled rows inside the
+    // uniqueness constraint on purpose).
+    //
+    // Line items are kept too: Table 12 for an already-filed period has to be
+    // reproducible even after a later cancellation.
+    //
+    // transaction_adjustments for a cancelled CR/CP are dropped, since those
+    // are live allocations against open bills rather than a filed document.
+    await conn.query("DELETE FROM transaction_adjustments WHERE voucher_transaction_id = ?", [tid]);
+    await conn.query(
+      "UPDATE `transaction` SET is_cancelled = 1, updation_date = NOW(), userid = ? WHERE id = ?",
+      [req.user.id, tid]
+    );
 
     await conn.commit();
     conn.release();
-    res.json({ success: true, message: "Transaction deleted and stock/ledger reversed" });
+    res.json({ success: true, message: "Transaction cancelled and stock/ledger reversed" });
   } catch (e) {
     await conn.rollback();
     conn.release();
-    res.status(500).json({ success: false, message: e.message });
+    res.status(e.status || 500).json({ success: false, message: e.message });
   }
 });
 

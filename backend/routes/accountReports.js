@@ -108,7 +108,7 @@ router.get("/reports/accounts/ledger", async (req, res) => {
               t.final_amount,
               t.creation_date
        FROM   transaction t
-       WHERE  t.customer_id = ?
+       WHERE  t.is_cancelled = 0 AND t.customer_id = ?
          ${dateFilter}
        ORDER  BY t.date, t.id`,
       [accountId, ...dateParams]
@@ -178,13 +178,13 @@ router.get("/reports/accounts/outstanding", async (req, res) => {
               COALESCE((
                 SELECT SUM(tr.final_amount)
                 FROM transaction tr
-                WHERE tr.customer_id = c.id AND tr.trans_type = 'CR' ${dateFilterR}
+                WHERE tr.is_cancelled = 0 AND tr.customer_id = c.id AND tr.trans_type = 'CR' ${dateFilterR}
               ), 0)                               AS period_receipts,
               COALESCE(c.closing, 0)              AS closing_balance
        FROM   customer c
        LEFT JOIN \`group\` g ON g.id = c.group
        LEFT JOIN transaction t
-              ON t.customer_id = c.id AND t.trans_type = 'SI'
+              ON t.customer_id = c.id AND t.trans_type = 'SI' AND t.is_cancelled = 0
        WHERE  LOWER(g.name) LIKE '%customer%'
        GROUP  BY c.id, c.name, c.city, c.contact_no, c.gstin, g.name,
                  c.opening, c.closing
@@ -243,13 +243,13 @@ router.get("/reports/accounts/supplier-balance", async (req, res) => {
               COALESCE((
                 SELECT SUM(tp.final_amount)
                 FROM transaction tp
-                WHERE tp.customer_id = c.id AND tp.trans_type = 'CP' ${dateFilterP}
+                WHERE tp.is_cancelled = 0 AND tp.customer_id = c.id AND tp.trans_type = 'CP' ${dateFilterP}
               ), 0)                               AS period_payments,
               COALESCE(c.closing, 0)              AS closing_balance
        FROM   customer c
        LEFT JOIN \`group\` g ON g.id = c.group
        LEFT JOIN transaction t
-              ON t.customer_id = c.id AND t.trans_type = 'PI'
+              ON t.customer_id = c.id AND t.trans_type = 'PI' AND t.is_cancelled = 0
        WHERE  LOWER(g.name) LIKE '%supplier%'
        GROUP  BY c.id, c.name, c.city, c.contact_no, c.gstin, g.name,
                  c.opening, c.closing
@@ -301,7 +301,8 @@ router.get("/reports/accounts/summary", async (req, res) => {
          COUNT(CASE WHEN trans_type='PI' ${dateFilter} THEN 1 END)                       AS purchase_count,
          COUNT(CASE WHEN trans_type='CR' ${dateFilter} THEN 1 END)                       AS receipt_count,
          COUNT(CASE WHEN trans_type='CP' ${dateFilter} THEN 1 END)                       AS payment_count
-       FROM transaction`,
+       FROM transaction
+       WHERE is_cancelled = 0`,
       [
         ...dateParams, ...dateParams, ...dateParams, ...dateParams,
         ...dateParams, ...dateParams, ...dateParams, ...dateParams,

@@ -640,6 +640,9 @@
                 },
                 "lowstockqty": {
                   "example": "any"
+                },
+                "uqc": {
+                  "example": "any"
                 }
               }
             }
@@ -824,6 +827,9 @@
                 },
                 "lowstockqty": {
                   "example": "any"
+                },
+                "uqc": {
+                  "example": "any"
                 }
               }
             }
@@ -866,6 +872,21 @@
             "name": "authorization",
             "in": "header",
             "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "hsn_code": {
+                  "example": "any"
+                },
+                "uqc": {
+                  "example": "any"
+                }
+              }
+            }
           }
         ],
         "responses": {
@@ -1822,6 +1843,9 @@
           },
           "404": {
             "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict"
           },
           "500": {
             "description": "Internal Server Error"

@@ -1,6 +1,13 @@
 const router = require("express").Router();
 const pool = require("../config/db");
 const auth = require("../middleware/AuthMiddleware");
+const { validateProductGst, isValidHsn, UQC_CODES } = require("../config/gst");
+
+// HSN and UQC are optional. Store a real NULL rather than an empty string, so
+// the pre-filing gate's "IS NULL OR = ''" checks and Table 12's grouping both
+// see one consistent representation of "not set".
+const isBlank = (v) => v === undefined || v === null || String(v).trim() === "";
+const blankToNull = (v) => (isBlank(v) ? null : String(v).trim());
 
 // GET /api/products  — list with search, optional pagination, category filter (public)
 // If page & limit are NOT passed from the GUI, all matching records are returned.
@@ -135,9 +142,18 @@ router.get("/products/:id", async (req, res) => {
 // POST /api/products
 router.post("/products/", auth, async (req, res) => {
   // #swagger.tags = ['Products']
-  const { name, category, purc_rate, sale_rate, hsn_code, barcode, gstPer, o_qty  ,lowstockqty} = req.body;
+  const { name, category, purc_rate, sale_rate, hsn_code, barcode, gstPer, o_qty  ,lowstockqty,
+          uqc } = req.body;
   if (!name || !purc_rate || !sale_rate)
     return res.status(400).json({ success: false, message: "name, purc_rate and sale_rate required" });
+
+  // GSTR-1 Tables 8 and 12 are built from these three fields. A product
+  // created without them is turnover that cannot be reported, so it is
+  // cheaper to reject the create than to chase it down at filing time.
+  const gstErrors = validateProductGst({ hsn_code, uqc, gstPer });
+  if (gstErrors.length)
+    return res.status(400).json({ success: false, message: gstErrors.join("; ") });
+
   try {
     if (barcode) {
       const [ex] = await pool.query("SELECT id FROM product WHERE barcode=?", [barcode]);
@@ -145,8 +161,9 @@ router.post("/products/", auth, async (req, res) => {
     }
     const qty = o_qty || 0;
     const [r] = await pool.query(
-      "INSERT INTO product (name,category,purc_rate,sale_rate,hsn_code,barcode,gstPer,o_qty,c_qty,lowstockqty) VALUES (?,?,?,?,?,?,?,?,?,?)",
-      [name, category || null, purc_rate, sale_rate, hsn_code || null, barcode || null, gstPer, qty, qty , lowstockqty]
+      "INSERT INTO product (name,category,purc_rate,sale_rate,hsn_code,barcode,gstPer,o_qty,c_qty,lowstockqty,uqc) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      [name, category || null, purc_rate, sale_rate, blankToNull(hsn_code), barcode || null, gstPer, qty, qty , lowstockqty,
+       blankToNull(uqc)]
     );
     res.status(201).json({ success: true, message: "Product created", data: { id: r.insertId } });
   } catch (e) {
@@ -157,9 +174,15 @@ router.post("/products/", auth, async (req, res) => {
 // PUT /api/products/:id
 router.put("/products/:id", auth, async (req, res) => {
   // #swagger.tags = ['Products']
-  const { name, category, purc_rate, sale_rate, hsn_code, barcode, gstPer, o_qty  , lowstockqty} = req.body;
+  const { name, category, purc_rate, sale_rate, hsn_code, barcode, gstPer, o_qty  , lowstockqty,
+          uqc } = req.body;
   if (!name || !purc_rate || !sale_rate)
     return res.status(400).json({ success: false, message: "name, purc_rate and sale_rate required" });
+
+  const gstErrors = validateProductGst({ hsn_code, uqc, gstPer });
+  if (gstErrors.length)
+    return res.status(400).json({ success: false, message: gstErrors.join("; ") });
+
   try {
 
     if (barcode) {
@@ -183,8 +206,9 @@ router.put("/products/:id", auth, async (req, res) => {
     }
     let c_qty = o_qty + p_qty - s_qty;
     const [r] = await pool.query(
-      "UPDATE product SET name=?,category=?,purc_rate=?,sale_rate=?,hsn_code=?,barcode=?,gstPer=?,o_qty=?,c_qty=?,lowstockqty=? WHERE id=?",
-      [name, category || null, purc_rate, sale_rate, hsn_code || null, barcode || null, gstPer || 0, o_qty || 0, c_qty || 0,lowstockqty ||0 , req.params.id]
+      "UPDATE product SET name=?,category=?,purc_rate=?,sale_rate=?,hsn_code=?,barcode=?,gstPer=?,o_qty=?,c_qty=?,lowstockqty=?,uqc=? WHERE id=?",
+      [name, category || null, purc_rate, sale_rate, blankToNull(hsn_code), barcode || null, gstPer || 0, o_qty || 0, c_qty || 0,lowstockqty ||0 ,
+       blankToNull(uqc), req.params.id]
     );
     if (!r.affectedRows) return res.status(404).json({ success: false, message: "Product not found" });
     res.json({ success: true, message: "Product updated" });
@@ -196,9 +220,21 @@ router.put("/products/:id", auth, async (req, res) => {
 // PATCH /api/products/:id  — partial update (e.g. just stock qty)
 router.patch("/products/:id", auth, async (req, res) => {
   // #swagger.tags = ['Products']
-  const allowed = ["name", "category", "purc_rate", "sale_rate", "hsn_code", "barcode", "o_qty", "p_qty", "s_qty", "c_qty" , "lowstockqty"];
+  const allowed = ["name", "category", "purc_rate", "sale_rate", "hsn_code", "barcode", "o_qty", "p_qty", "s_qty", "c_qty" , "lowstockqty",
+                   "uqc"];
   const updates = Object.keys(req.body).filter(k => allowed.includes(k));
   if (!updates.length) return res.status(400).json({ success: false, message: "No valid fields" });
+
+  // Partial update, so each GST field is validated only when it is actually
+  // present — validateProductGst() cannot be used here, it demands all three.
+  const patchErrors = [];
+  if ("hsn_code" in req.body && !isBlank(req.body.hsn_code) && !isValidHsn(req.body.hsn_code))
+    patchErrors.push("hsn_code must be 4, 6 or 8 digits (numbers only) when provided");
+  if ("uqc" in req.body && !isBlank(req.body.uqc) && !UQC_CODES.includes(req.body.uqc))
+    patchErrors.push(`uqc must be one of: ${UQC_CODES.join(", ")}`);
+  if (patchErrors.length)
+    return res.status(400).json({ success: false, message: patchErrors.join("; ") });
+
   try {
     const vals = updates.map(k => req.body[k]);
     vals.push(req.params.id);

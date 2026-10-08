@@ -143,10 +143,11 @@ export default function PurchaseEntry() {
 
     const rawItems = (d.items ?? []).map((i) => ({
       ...i,
+      // item_amount drives the expense sequence; taxable_amount is already the
+      // post-discount base GST was charged on. Older rows have only the latter.
+      item_amount: parseFloat(i.item_amount ?? i.taxable_amount) || 0,
       taxable_amount: parseFloat(i.taxable_amount) || 0,
     }));
-    // GST was charged on the post-discount base when this bill was saved, so
-    // the stored CGST/SGST must be read back against that same base.
     const gstFactor = isgstbill ? calcGSTFactor(rawItems, expenses) : 1;
 
     let obj = {
@@ -162,8 +163,9 @@ export default function PurchaseEntry() {
       isGSTBill: isgstbill,
       items: rawItems.map((i) => {
         const gst = splitGST(i?.gstPer || 0);
-        // derive pct against the base GST was actually charged on
-        const gstBase = i.taxable_amount * gstFactor;
+        // taxable_amount IS the base GST was charged on — do not re-apply
+        // gstFactor, that would discount an already-discounted figure.
+        const gstBase = i.taxable_amount;
         const cgst_pct = isgstbill && gstBase
           ? (parseFloat(i.CGST) / gstBase) * 100
           : gst.cgst;
@@ -268,6 +270,7 @@ export default function PurchaseEntry() {
         product_id: i.product_id,
         qty: parseFloat(i.qty),
         rate: parseFloat(i.rate),
+        item_amount: parseFloat(i.item_amount),
         taxable_amount: parseFloat(i.taxable_amount),
         CGST: parseFloat(i.CGST),
         SGST: parseFloat(i.SGST),

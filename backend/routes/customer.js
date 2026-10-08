@@ -93,7 +93,7 @@ router.get("/customers/:id/ledger", async (req, res) => {
   // #swagger.tags = ['Customers']
   const { from, to } = req.query;
   try {
-    let where = "WHERE t.customer_id=?";
+    let where = "WHERE t.is_cancelled = 0 AND t.customer_id=?";
     const params = [req.params.id];
     if (from) { where += " AND DATE(t.date)>=?"; params.push(from); }
     if (to) { where += " AND DATE(t.date)<=?"; params.push(to); }
